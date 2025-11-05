@@ -17,7 +17,7 @@ export function startKeepAlive(intervalMs = 12 * 60 * 1000) {
     }
   }, intervalMs)
 
-  console.log('KeepAlive ativo, a pingar:', APP_BASE_URL)
+  console.log('KeepAlive ativo, a pingar')
   return {
     stop() {
       clearInterval(timer)
