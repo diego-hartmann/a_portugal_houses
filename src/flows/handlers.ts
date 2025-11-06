@@ -14,6 +14,130 @@ import { titleCase, normalizeInternationalPhone, splitFirstLast } from './utils.
 
 import { getBatch, updateCell } from '../infra/sheets.js'
 
+
+export enum STEP {
+  IDLE = 'idle',
+  ASK_NAME_FULL = 'ask_name_full',
+  ASK_INTEREST = 'ask_interest',
+  SELECT_REGIONS = 'select_regions',
+  ASK_EMAIL = 'ask_email',
+  ASK_PHONE_COUNTRY = 'ask_phone_country',
+  ASK_PHONE_NATIONAL = 'ask_phone_national',
+  FINALIZING = 'finalizing',
+}
+export function executeActionBasedOnCurrentStep(
+  step: STEP,
+  bot: TelegramBot, msg: TelegramBot.Message){
+  const mapStepToAction: Record<STEP, () => void> = {
+    [STEP.IDLE]: (): void => {
+      bot.sendMessage(msg.chat.id, 'Gostaria de começar?', WELCOME_KEYBOARD)
+    },
+    [STEP.ASK_NAME_FULL]: (): void => {
+      if (!msg.text) {
+        return
+      }
+      const name = msg.text.trim()
+      if (!name.includes(' ')) {
+        bot.sendMessage(msg.chat.id, 'Por favor, envie nome e sobrenome')
+        return
+      }
+      const { first, last } = splitFirstLast(name)
+      setDraft({ name: `${first} ${last}` }, msg.chat.id)
+      setCurrentStep(STEP.ASK_INTEREST, msg.chat.id)
+      bot.sendMessage(
+        msg.chat.id,
+        `É um prazer falar com você, ${titleCase(first)} ${titleCase(last)}.\nNo que tem interesse: arrendar, comprar ou ambos?`,
+        INTEREST_KEYBOARD,
+      )
+    },
+    [STEP.ASK_INTEREST]: (): void => {
+      if (!msg.text) return
+      const interestRaw = msg.text.trim().toLowerCase() as Interest
+      const allowed = { arrendar: 'arrendar', comprar: 'comprar', ambos: 'ambos' }
+      if (!(allowed as any)[interestRaw]) {
+        bot.sendMessage(
+          msg.chat.id,
+          'Escolha uma opção: Arrendar, Comprar ou Ambos',
+          INTEREST_KEYBOARD,
+        )
+        return
+      }
+      setDraft({ interest: (allowed as any)[interestRaw], regions: [] }, msg.chat.id)
+      setCurrentStep(STEP.SELECT_REGIONS, msg.chat.id)
+      bot.sendMessage(
+        msg.chat.id,
+        'Selecione as regiões de interesse (pode escolher várias)',
+        regionsKeyboard((allowed as any)[interestRaw] as Interest, []),
+      )
+    },
+    [STEP.SELECT_REGIONS]: (): void => {
+      // This step is handled via callback_query, so just prompt again if message received
+      bot.sendMessage(
+        msg.chat.id,
+        'Selecione as regiões de interesse (pode escolher várias)',
+        regionsKeyboard(getDraft(msg.chat.id).draft.interest, getDraft(msg.chat.id).draft.regions || []),
+      )
+    },
+    [STEP.ASK_EMAIL]: (): void => {
+      const email = (msg.text || '').trim()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        bot.sendMessage(msg.chat.id, 'Esse email não parece válido. Tente novamente')
+        return
+      }
+      setDraft({ email: email.toLowerCase() }, msg.chat.id)
+      setCurrentStep(STEP.ASK_PHONE_COUNTRY, msg.chat.id)
+      bot.sendMessage(msg.chat.id, 'Qual é o código telefônico do seu país?', PHONE_CC_QUICK_KEYBOARD)
+    },
+    [STEP.ASK_PHONE_COUNTRY]: (): void => {
+      const raw = (msg.text || '').trim()
+      if (/portugal/i.test(raw)) {
+        setDraft({ phoneCountryCode: 351 }, msg.chat.id)
+        setCurrentStep(STEP.ASK_PHONE_NATIONAL, msg.chat.id)
+        bot.sendMessage(msg.chat.id, 'Agora apenas o número (sem o +351)')
+        return
+      }
+      if (/brasil/i.test(raw)) {
+        setDraft({ phoneCountryCode: 55 }, msg.chat.id)
+        setCurrentStep(STEP.ASK_PHONE_NATIONAL, msg.chat.id)
+        bot.sendMessage(msg.chat.id, 'Agora apenas o número (sem o +55)')
+        return
+      }
+      if (/outro país|outros|outro/i.test(raw)) {
+        bot.sendMessage(msg.chat.id, 'Indique apenas os dígitos do indicativo (ex.: 34, 49, 1)')
+        return
+      }
+      const cc = raw.replace(/\D+/g, '')
+      if (!cc) {
+        bot.sendMessage(msg.chat.id, 'Envie o indicativo apenas com dígitos (ex.: 351, 55)')
+        return
+      }
+      setDraft({ phoneCountryCode: cc }, msg.chat.id)
+      setCurrentStep(STEP.ASK_PHONE_NATIONAL, msg.chat.id)
+      bot.sendMessage(msg.chat.id, 'Agora apenas o número (sem o código do país)')
+    },
+    [STEP.ASK_PHONE_NATIONAL]: (): void => {
+      if (!msg.text) return
+      bot.sendMessage(msg.chat.id, 'Validando número...')
+      const s = SESSION.get(msg.chat.id)
+      const cc = s?.draft?.phoneCountryCode || ''
+      const normalized = normalizeInternationalPhone(cc, msg.text)
+      if (!normalized) {
+        bot.sendMessage(
+          msg.chat.id,
+          'Hum... Esse não me parece um número válido, poderia tentar novamente?',
+        )
+        return
+      }
+      setDraft({ phone: normalized }, msg.chat.id)
+      setCurrentStep(STEP.FINALIZING, msg.chat.id)
+      finalizeLead(bot, msg.chat.id)
+    },
+    [STEP.FINALIZING]: (): void => {
+      bot.sendMessage(msg.chat.id, 'Um momento…')
+    },
+  }
+  return mapStepToAction[step]()
+}
 // ---------------------------------------------------------------------------
 // Helpers locais
 // ---------------------------------------------------------------------------
@@ -37,7 +161,7 @@ const stepsInOrder: ((bot: TelegramBot, text: TelegramBot.Message) => void)[] = 
     }
     const { first, last } = splitFirstLast(name)
     setDraft({ name: `${first} ${last}` }, msg.chat.id)
-    setStep('ask_interest', msg.chat.id)
+    setCurrentStep(STEP.ASK_INTEREST, msg.chat.id)
     bot.sendMessage(
       msg.chat.id,
       `É um prazer falar com você, ${titleCase(first)} ${titleCase(last)}.\nNo que tem interesse: arrendar, comprar ou ambos?`,
@@ -65,7 +189,7 @@ const stepsInOrder: ((bot: TelegramBot, text: TelegramBot.Message) => void)[] = 
       return
     }
     setDraft({ interest: (allowed as any)[interestRaw], regions: [] }, msg.chat.id)
-    setStep('select_regions', msg.chat.id)
+    setCurrentStep(STEP.SELECT_REGIONS, msg.chat.id)
     bot.sendMessage(
       msg.chat.id,
       'Selecione as regiões de interesse (pode escolher várias)',
@@ -80,7 +204,7 @@ const stepsInOrder: ((bot: TelegramBot, text: TelegramBot.Message) => void)[] = 
       return
     }
     setDraft({ email: email.toLowerCase() }, msg.chat.id)
-    setStep('ask_phone_country', msg.chat.id)
+    setCurrentStep(STEP.ASK_PHONE_COUNTRY, msg.chat.id)
     bot.sendMessage(msg.chat.id, 'Qual é o código telefônico do seu país?', PHONE_CC_QUICK_KEYBOARD)
   },
 
@@ -90,13 +214,13 @@ const stepsInOrder: ((bot: TelegramBot, text: TelegramBot.Message) => void)[] = 
     // atalhos por botão
     if (/portugal/i.test(raw)) {
       setDraft({ phoneCountryCode: 351 }, msg.chat.id)
-      setStep('ask_phone_national', msg.chat.id)
+      setCurrentStep(STEP.ASK_PHONE_NATIONAL, msg.chat.id)
       bot.sendMessage(msg.chat.id, 'Agora apenas o número (sem o +351)')
       return
     }
     if (/brasil/i.test(raw)) {
       setDraft({ phoneCountryCode: 55 }, msg.chat.id)
-      setStep('ask_phone_national', msg.chat.id)
+      setCurrentStep(STEP.ASK_PHONE_NATIONAL, msg.chat.id)
       bot.sendMessage(msg.chat.id, 'Agora apenas o número (sem o +55)')
       return
     }
@@ -114,7 +238,7 @@ const stepsInOrder: ((bot: TelegramBot, text: TelegramBot.Message) => void)[] = 
     }
 
     setDraft({ phoneCountryCode: cc }, msg.chat.id)
-    setStep('ask_phone_national', msg.chat.id)
+    setCurrentStep(STEP.ASK_PHONE_NATIONAL, msg.chat.id)
     bot.sendMessage(msg.chat.id, 'Agora apenas o número (sem o código do país)')
   },
 
@@ -134,7 +258,7 @@ const stepsInOrder: ((bot: TelegramBot, text: TelegramBot.Message) => void)[] = 
     }
 
     setDraft({ phone: normalized }, msg.chat.id)
-    setStep('finalizing', msg.chat.id)
+    setCurrentStep(STEP.FINALIZING, msg.chat.id)
     finalizeLead(bot, msg.chat.id) // agora consistente com regions CSV
     return
   },
@@ -151,7 +275,7 @@ function initSession(chatId?: TelegramBot.ChatId) {
   if (!chatId) return
   SESSION.set(chatId, { step: 'idle', draft: {} })
 }
-function setStep(step: string, chatId?: TelegramBot.ChatId) {
+function setCurrentStep(step: STEP, chatId: TelegramBot.ChatId) {
   if (!chatId) return
   const s = SESSION.get(chatId) || { step: 'idle', draft: {} }
   s.step = step
@@ -221,10 +345,10 @@ async function finalizeLead(bot: TelegramBot, chatId: TelegramBot.ChatId) {
       'Obrigado! Avisaremos quando houver casas disponíveis',
       inlineKeyboard,
     )
-    setStep('idle', chatId)
+    setCurrentStep(STEP.IDLE, chatId)
   } catch (e) {
     console.error('finalizeLead error:', e)
-    setStep('idle', chatId) // não fica preso em finalizing
+    setCurrentStep(STEP.IDLE, chatId) // não fica preso em finalizing
     await bot.sendMessage(chatId, 'Ocorreu um erro ao guardar. Tente novamente com /start')
   } finally {
     const cur = SESSION.get(chatId) || {}
@@ -340,7 +464,7 @@ async function initInitialMessage(bot: TelegramBot, chatId: TelegramBot.ChatId) 
     'Bem-vindo(a) à Portugal Houses!\n\nPara avisarmos sobre casas disponíveis, precisaremos do seu contacto.',
   )
   // Deep-link → avança imediatamente para o primeiro passo útil
-  setStep('ask_name_full', chatId)
+  setCurrentStep(STEP.ASK_NAME_FULL, chatId)
   return bot.sendMessage(chatId, 'Para começarmos, como se chama? Escreva nome e sobrenome.')
 }
 
@@ -383,12 +507,12 @@ export function attachHandlers(bot: TelegramBot) {
       const s = SESSION.get(chatId)
       // se não houver draft/step útil, cai para reinício
       if (!s?.draft?.name) {
-        setStep('ask_name_full', chatId)
+        setCurrentStep(STEP.ASK_NAME_FULL, chatId)
         return bot.sendMessage(chatId, 'Para começarmos, como se chama? Escreva nome e sobrenome')
       }
       // caso já tenha nome mas esteja parado, avança para o próximo passo lógico
       if (!s?.draft?.interest) {
-        setStep('ask_interest', chatId)
+        setCurrentStep(STEP.ASK_INTEREST, chatId)
         return bot.sendMessage(
           chatId,
           'No que teria interesse: arrendar, comprar ou ambos?',
@@ -396,7 +520,7 @@ export function attachHandlers(bot: TelegramBot) {
         )
       }
       if (!s?.draft?.regions?.length) {
-        setStep('select_regions', chatId)
+        setCurrentStep(STEP.SELECT_REGIONS, chatId)
         return bot.sendMessage(
           chatId,
           'Selecione as regiões de interesse (pode escolher várias)',
@@ -404,51 +528,24 @@ export function attachHandlers(bot: TelegramBot) {
         )
       }
       if (!s?.draft?.email) {
-        setStep('ask_email', chatId)
+        setCurrentStep(STEP.ASK_EMAIL, chatId)
         return bot.sendMessage(chatId, 'Para qual email enviaremos o aviso?')
       }
       if (!s?.draft?.phoneCountryCode) {
-        setStep('ask_phone_country', chatId)
+        setCurrentStep(STEP.ASK_PHONE_COUNTRY, chatId)
         return bot.sendMessage(chatId, 'Qual é o indicativo do seu país?', PHONE_CC_QUICK_KEYBOARD)
       }
       if (!s?.draft?.phoneNational) {
-        setStep('ask_phone_national', chatId)
+        setCurrentStep(STEP.ASK_PHONE_NATIONAL, chatId)
         return bot.sendMessage(chatId, 'Agora o seu número (apenas dígitos).')
       }
 
-      // se tudo preenchido mas não finalizado
-      setStep('finalizing', chatId)
+      setCurrentStep(STEP.FINALIZING, chatId)
       return finalizeLead(bot, chatId)
     }
 
     try {
-      if (step === 'ask_name_full') {
-        stepsInOrder[0]?.(bot, msg)
-      }
-
-      if (step === 'ask_interest') {
-        stepsInOrder[1]?.(bot, msg)
-      }
-
-      if (step === 'ask_email') {
-        stepsInOrder[2]?.(bot, msg)
-      }
-
-      if (step === 'ask_phone_country') {
-        stepsInOrder[3]?.(bot, msg)
-      }
-
-      if (step === 'ask_phone_national') {
-        stepsInOrder[4]?.(bot, msg)
-      }
-
-      if (step === 'finalizing') {
-        stepsInOrder[5]?.(bot, msg)
-      }
-
-      if (step === 'idle') {
-        return bot.sendMessage(chatId, 'Gostaria de começar?', WELCOME_KEYBOARD)
-      }
+      executeActionBasedOnCurrentStep(step, bot, msg)
     } catch (err) {
       console.error('Erro no handler:', err)
       await bot.sendMessage(chatId, 'Ocorreu um erro. Tente novamente com /start')
@@ -517,7 +614,7 @@ export function attachHandlers(bot: TelegramBot) {
             regionsKeyboard((s as any).draft.interest, selected),
           )
         }
-        setStep('ask_email', chatId)
+        setCurrentStep(STEP.ASK_EMAIL, chatId)
         return bot.sendMessage(chatId, 'Para qual email enviaremos o aviso?')
       }
     } catch (err) {
