@@ -9,7 +9,7 @@
     "kill": "pkill -f node || true",
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "nodemon --watch src --ext ts,tsx --exec tsx index.ts",
+    "local": "nodemon --watch src --ext ts,tsx --exec tsx index.ts",
     "watch": "tsc --watch"
   },
   "keywords": [],
