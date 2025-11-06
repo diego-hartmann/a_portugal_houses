@@ -1,6 +1,6 @@
-import { Interest, Lead, Region } from './models.js'
+import {  Lead, Region } from './models.js'
 
-import { REGION_CODE, REGION_SETS, INTEREST_CODE } from './models.js'
+import { REGION_CODE } from './models.js'
 
 import { WA_CONSULTANT_PHONE, WA_MESSAGE_TEMPLATE } from '../config/env.js'
 
@@ -8,14 +8,12 @@ import { titleCase, randomBase36, splitFirstLast } from './utils.js'
 
 // ____________________________________________________________________
 
-export function buildLeadCode(interest: Interest, regions: string): string {
-  const iCode = INTEREST_CODE[interest] || 'X'
-
+export function buildLeadCode(regions: string): string {
   const firstRegion: Region = regions.split(',')[0] as Region
 
-  const rCode = REGION_CODE[firstRegion ?? 'outras-regioes'] || 'X'
+  const rCode = REGION_CODE[firstRegion] || 'X'
 
-  return `PH-${iCode}-${rCode}-${randomBase36(4)}`
+  return `PH-${rCode}-${randomBase36(4)}`
 }
 
 export function buildWhatsAppLink(lead: Lead) {
@@ -27,7 +25,6 @@ export function buildWhatsAppLink(lead: Lead) {
     .replace(/{name}/g, titleCase(lead.name || ''))
     .replace(/{first_name}/g, titleCase(first))
     .replace(/{last_name}/g, titleCase(last))
-    .replace(/{interest}/g, titleCase(lead.interest || ''))
     .replace(
       /{regions}/g,
       lead.regions
@@ -40,10 +37,8 @@ export function buildWhatsAppLink(lead: Lead) {
   return `https://wa.me/${WA_CONSULTANT_PHONE}?text=${encodeURIComponent(message)}`
 }
 
-export function regionsKeyboard(interest: Interest, selectedRegions: Region[] = []) {
-  const regionsBasedOnInterest = REGION_SETS[interest] || []
-
-  const rows = regionsBasedOnInterest.map(region => {
+export function regionsKeyboard( selectedRegions: Region[] = []) {
+  const rows = [Region.LISBOA, Region.VISEU].map(region => {
     const isOn = selectedRegions.includes(region)
     const label = `${isOn ? '✅' : '⬜️'} ${titleCase(region)}`
 
