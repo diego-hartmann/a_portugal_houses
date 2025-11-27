@@ -1,6 +1,6 @@
 import { buildLeadCode, buildWhatsAppLink, regionsKeyboard } from './chat-helpers.js'
 import TelegramBot from 'node-telegram-bot-api'
-import { Interest, Lead, Status } from './models.js'
+import { Lead, Status } from './models.js'
 
 import { appendLeadRespectingHeaders, updateTelegramChatIdForLead } from '../services/leads.js'
 
@@ -8,7 +8,7 @@ import { TELEGRAM_ADMIN_CHAT_ID, MILLISECONDS_FOR_1_HOUR } from '../config/env.j
 
 import { notifyAdmin } from '../services/admin.js'
 
-import { INTEREST_KEYBOARD, PHONE_CC_QUICK_KEYBOARD, WELCOME_KEYBOARD } from '../ui/keyboards.js'
+import { PHONE_CC_QUICK_KEYBOARD, WELCOME_KEYBOARD } from '../ui/keyboards.js'
 
 import { titleCase, normalizeInternationalPhone, splitFirstLast } from './utils.js'
 
@@ -43,6 +43,22 @@ export function executeActionBasedOnCurrentStep(
       }
       const { first, last } = splitFirstLast(name)
       setDraft({ name: `${first} ${last}` }, msg.chat.id)
+
+      setCurrentStep(STEP.SELECT_REGIONS, msg.chat.id)
+      bot.sendMessage(
+        msg.chat.id,
+        `É um prazer falar com você, ${titleCase(first)} ${titleCase(last)}!\n\nEm quais regiões você quer arrendar?`,
+        regionsKeyboard(getDraft(msg.chat.id).draft.regions || [])
+      )
+    },
+    [STEP.SELECT_REGIONS]: (): void => {
+      // TODO refatorar
+      // // This step is handled via callback_query, so just prompt again if message received
+      // bot.sendMessage(
+      //   msg.chat.id,
+      //   'Selecione as regiões de interesse (pode escolher várias)',
+      //   regionsKeyboard(getDraft(msg.chat.id).draft.regions || []),
+      // )
       setCurrentStep(STEP.ASK_INTEREST, msg.chat.id)
       bot.sendMessage(
         msg.chat.id,
@@ -77,6 +93,7 @@ export function executeActionBasedOnCurrentStep(
         'Selecione as regiões de interesse (pode escolher várias)',
         regionsKeyboard(getDraft(msg.chat.id).draft.interest, getDraft(msg.chat.id).draft.regions || []),
       )
+
     },
     [STEP.ASK_EMAIL]: (): void => {
       const email = (msg.text || '').trim()
@@ -300,7 +317,7 @@ async function finalizeLead(bot: TelegramBot, chatId: TelegramBot.ChatId) {
     const regionsCsv = toRegionsCsv(draft.regions)
 
     // se já gerámos code antes, não crie novo / evita duplicar
-    const code: string = draft.code || buildLeadCode(draft.interest as Interest, regionsCsv)
+    const code: string = draft.code || buildLeadCode(regionsCsv)
 
     if (!draft.code) setDraft({ code }, chatId)
 
@@ -309,7 +326,6 @@ async function finalizeLead(bot: TelegramBot, chatId: TelegramBot.ChatId) {
       name: draft.name || '',
       email: draft.email || '',
       phone: draft.phone || '',
-      interest: (draft.interest || '') as Interest,
       regions: regionsCsv, // <-- salva como string (CSV) para a Sheet
       created_at: new Date().toISOString(),
       status: Status.NOVO,
@@ -322,7 +338,6 @@ async function finalizeLead(bot: TelegramBot, chatId: TelegramBot.ChatId) {
       `📝 Lead salvo em Google Sheet\n` +
         `Código: ${lead.code}\n` +
         `Nome: ${titleCase(lead.name)}\n` +
-        `Interesse: ${lead.interest}\n` +
         `Regiões: ${lead.regions}\n` +
         `Email: ${lead.email}\n` +
         `Telefone: ${lead.phone}\n` +
@@ -370,7 +385,7 @@ async function checkClosedLeads(bot: TelegramBot): Promise<void> {
     'Leads!B2:B', // 1 name
     'Leads!C2:C', // 2 email
     'Leads!D2:D', // 3 phone
-    'Leads!E2:E', // 4 interest
+    'Leads!E2:E', // 4 interest // nao usada
     'Leads!F2:F', // 5 regions
     'Leads!G2:G', // 6 created_at
     'Leads!I2:I', // 7 status
@@ -382,7 +397,7 @@ async function checkClosedLeads(bot: TelegramBot): Promise<void> {
     colName,
     colEmail,
     colPhone,
-    colInterest,
+    colInterest, // nao usada
     colRegions,
     colCreatedAt,
     colStatus,
@@ -395,7 +410,7 @@ async function checkClosedLeads(bot: TelegramBot): Promise<void> {
     colName?.length ?? 0,
     colEmail?.length ?? 0,
     colPhone?.length ?? 0,
-    colInterest?.length ?? 0,
+    colInterest?.length ?? 0, // nao usada
     colRegions?.length ?? 0,
     colCreatedAt?.length ?? 0,
     colStatus?.length ?? 0,
@@ -407,7 +422,6 @@ async function checkClosedLeads(bot: TelegramBot): Promise<void> {
     const name = (colName?.[i]?.[0] || '').trim()
     const email = (colEmail?.[i]?.[0] || '').trim()
     const phone = (colPhone?.[i]?.[0] || '').trim()
-    const interest = (colInterest?.[i]?.[0] || '').trim()
     const regions = (colRegions?.[i]?.[0] || '').trim()
     const created = (colCreatedAt?.[i]?.[0] || '').trim()
     const status = (colStatus?.[i]?.[0] || '').toLowerCase().trim()
@@ -421,7 +435,6 @@ async function checkClosedLeads(bot: TelegramBot): Promise<void> {
         `🏁 Lead FECHADO\n` +
           `Código: ${code}\n` +
           `Nome: ${titleCase(name)}\n` +
-          `Interesse: ${interest}\n` +
           `Regiões: ${regions}\n` +
           `Email: ${email}\n` +
           `Telefone: ${phone}\n` +
@@ -461,11 +474,12 @@ async function initInitialMessage(bot: TelegramBot, chatId: TelegramBot.ChatId) 
 
   await bot.sendMessage(
     chatId,
-    'Bem-vindo(a) à Portugal Houses!\n\nPara avisarmos sobre casas disponíveis, precisaremos do seu contacto.',
+    'Bem-vindo(a) à Portugal Houses Arrendamentos!\n\nPara avisarmos sobre casas disponíveis, precisaremos do seu contacto',
   )
   // Deep-link → avança imediatamente para o primeiro passo útil
   setCurrentStep(STEP.ASK_NAME_FULL, chatId)
-  return bot.sendMessage(chatId, 'Para começarmos, como se chama? Escreva nome e sobrenome.')
+
+  return bot.sendMessage(chatId, 'Para começarmos, como se chama? Escreva nome e sobrenome')
 }
 
 export function attachHandlers(bot: TelegramBot) {
@@ -494,7 +508,7 @@ export function attachHandlers(bot: TelegramBot) {
       initSession(chatId)
       return bot.sendMessage(
         chatId,
-        'Entendido! Quando quiser, basta escrever "Começar" ou /start.',
+        'Entendido! Quando quiser, basta escrever "Começar" ou /start',
       )
     }
 
@@ -511,6 +525,7 @@ export function attachHandlers(bot: TelegramBot) {
         return bot.sendMessage(chatId, 'Para começarmos, como se chama? Escreva nome e sobrenome')
       }
       // caso já tenha nome mas esteja parado, avança para o próximo passo lógico
+
       if (!s?.draft?.interest) {
         setCurrentStep(STEP.ASK_INTEREST, chatId)
         return bot.sendMessage(
@@ -519,12 +534,13 @@ export function attachHandlers(bot: TelegramBot) {
           INTEREST_KEYBOARD,
         )
       }
+
       if (!s?.draft?.regions?.length) {
         setCurrentStep(STEP.SELECT_REGIONS, chatId)
         return bot.sendMessage(
           chatId,
           'Selecione as regiões de interesse (pode escolher várias)',
-          regionsKeyboard(s.draft.interest, []),
+          regionsKeyboard([]),
         )
       }
       if (!s?.draft?.email) {
@@ -537,7 +553,8 @@ export function attachHandlers(bot: TelegramBot) {
       }
       if (!s?.draft?.phoneNational) {
         setCurrentStep(STEP.ASK_PHONE_NATIONAL, chatId)
-        return bot.sendMessage(chatId, 'Agora o seu número (apenas dígitos).')
+        return bot.sendMessage(chatId, 'Agora o seu número (apenas dígitos)')
+
       }
 
       setCurrentStep(STEP.FINALIZING, chatId)
@@ -586,7 +603,7 @@ export function attachHandlers(bot: TelegramBot) {
           text: `${titleCase(opt?.replace('-', ' '))} ${idx >= 0 ? 'removida' : 'adicionada'}`,
         })
         return bot.editMessageReplyMarkup(
-          regionsKeyboard((s as any).draft.interest, current).reply_markup,
+          regionsKeyboard(current).reply_markup,
           {
             chat_id: chatId,
             message_id: query.message?.message_id,
@@ -600,7 +617,7 @@ export function attachHandlers(bot: TelegramBot) {
         return bot.sendMessage(
           chatId,
           'Ok. Pode selecionar novamente:',
-          regionsKeyboard((s as any).draft.interest, current),
+          regionsKeyboard(current),
         )
       }
 
@@ -611,7 +628,7 @@ export function attachHandlers(bot: TelegramBot) {
           return bot.sendMessage(
             chatId,
             'Selecione pelo menos uma região',
-            regionsKeyboard((s as any).draft.interest, selected),
+            regionsKeyboard(selected),
           )
         }
         setCurrentStep(STEP.ASK_EMAIL, chatId)

@@ -1,12 +1,3 @@
-// src/ui/keyboards.js
-export const INTEREST_KEYBOARD = {
-  reply_markup: {
-    keyboard: [[{ text: 'Arrendar' }], [{ text: 'Comprar' }], [{ text: 'Ambos' }]],
-    resize_keyboard: true,
-    one_time_keyboard: true,
-  },
-}
-
 export const PHONE_CC_QUICK_KEYBOARD = {
   reply_markup: {
     keyboard: [
