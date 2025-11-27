@@ -1,209 +1,305 @@
-# Business Logic Blueprint — Sistema Inteligente de Lead Routing com Priority, Tracking e Histórico
+# Business Logic Blueprint — Sistema Inteligente de Lead Routing (PH Ecosystem)
 
 ## 🎯 Visão Geral
-
-Sistema de distribuição inteligente de leads entre consultores, com:
-- Matching por região + tipo de serviço
-- Prioridade baseada em comissão (commission_value)
-- Roteamento automático com fallback e redistribuição controlada
-- Proteção contra leads apagados, falsos CLOSED e “sumidos”
-- Histórico interno invisível aos consultores, com confirmação de fechamento
-- Monitorização e controle total pelo administrador (dashboard)
-
----
-
-## 🗃 Estrutura de Dados — Fontes
-
-| Planilha | Função |
-|----------|--------|
-| Leads_Prod.xlsx | Lead principal do consultor (página Leads) |
-| Leads_History (oculta) | Snapshot de Leads, protege contra exclusões |
-| Dashboard.xlsx | Monitorização geral, métricas, matching e orphans |
-| Consultores_clientes | Dados oficiais de consultores, regiões, serviços, comissões, chat_id |
-| orphan_leads | Leads sem atendimento disponível ou sem match atual |
+Sistema automático de captação, distribuição e controlo de leads imobiliários com:
+- Matching por serviços + regiões  
+- Prioridade por comissão  
+- Redistribuição automática  
+- Protecção contra deletações indevidas  
+- Histórico invisível ao consultor  
+- Notificações Telegram (admin e consultor)  
+- Dashboard global
 
 ---
 
-## 🧬 Estrutura do Lead (igual em Leads e Leads_History)
-
-Campos originais (base):
-
-| Campo | Descrição |
-|--------|-----------|
-| id | Identificador único (UUID ou timestamp+hash) |
-| name, phone, email | Identificação do contato |
-| interest_services | Tipos de serviço procurados |
-| interest_regions | Regiões desejadas |
-| anual_income | Rendimento anual aproximado |
-| created_at | Timestamp original visível |
-| created_at_unix | Timestamp técnico |
-| status | new / contacted / closed / lost |
-| notes | Observações |
-
-Campos técnicos adicionais (somente em Leads_History):
-
-| Campo extra | Função |
-|-------------|--------|
-| processed | true = já redistribuído ou órfão (não deve ser tocado novamente) |
-| confirmed_closed_by_consultor | true = consultor confirmou fechamento via Telegram |
+# 📁 Estrutura de Planilhas
 
 ---
 
-## 🔄 Ciclo de Vida do Lead
+# 1 — Leads_Blueprint (template para todas as planilhas de consultores)
 
-| Status | Significado |
-|--------|-------------|
-| new | Lead nunca direcionado ou recém-redistribuído |
-| contacted | Consultor recebeu e iniciou contacto |
-| closed | Fechado com sucesso (aguarda confirmação) |
-| lost | Contato perdido ou rejeitado (vai para próximo consultor) |
+Cada consultor possui uma cópia com as abas:
+
+| Aba | Função |
+|------|--------|
+| Start Here | Tutorial do consultor |
+| Control Panel | Definições pessoais + flags de notificações + serviços + regiões |
+| Leads | Leads activos (escritos pelo backend) |
+| Leads History | Snapshot bloqueado + escondido com proteção |
+| global_variables | Variáveis para validações e dropdowns |
 
 ---
 
-## ✉ Fluxo de Distribuição e Notificações
+## 1.1 Control Panel — Campos
 
-1️⃣ **Lead entra no sistema (via form, bot, ou admin)**
-- Criado simultaneamente em:
-  - Leads_Prod.Leads (sheet do consultor atribuído)
-  - Leads_Prod.Leads_History (snapshot)
-  - Dashboard.total_leads
-
-2️⃣ **Matching automático:**
-- Filtra consultores por:
-provided_services + regions_of_service
-
-diff
-Copy code
-- Ordena por:
-commission_value (maior primeiro)
-
-diff
-Copy code
-- Gera lista:
-matching_sheet_ids = "sheetA,sheetC,sheetB"
+company_name
+personal_name_for_contact
+receive_email_from_lead
+email
+cc_emails
+receive_whatsapp_from_lead
+whatsapp_phone
+receive_notification_on_telegram_when_important_communication (SEMPRE true, bloqueado)
+receive_notification_on_telegram_when_new_lead
+receive_notification_on_telegram_when_close_lead
+telegram_chat_ids_for_notifications
+provided_services
+regions_of_service
+active
 
 yaml
 Copy code
-- O primeiro consultor recebe o lead.
 
 ---
 
-### ▶ Regras de Redistribuição (quando consultor APAGA o lead)
+## 1.2 Estrutura do Lead (Leads / Leads History)
 
-| Caso | Ação do sistema |
-|------|-----------------|
-| Lead desapareceu de Leads e o registro em Leads_History tem `status != closed` | Redistribui automaticamente ao próximo consultor da lista |
-| Lead desapareceu de Leads mas registro tem `status = closed` | **NÃO redistribui automaticamente** → notifica admin |
-| ADMIN escolhe “redistribuir” via bot | Lead renasce como `status = new` no próximo consultor |
-| ADMIN escolhe “manter” | Nada se move, aparece de novo no próximo pooling |
-
----
-
-### 📌 Notificação ao administrador ao detectar lead CLOSED apagado:
-
-> Um lead marcado como CLOSED foi removido manualmente da Sheet **X**  
-> Lead ID: L-00233  
-> Ação necessária: **Redistribuir** ou **Manter**  
-> (Este lead não será redistribuído automaticamente sem tua decisão)
-
----
-
-### 🔐 Proteção contra falsos “closed”
-
-1️⃣ Quando consultor marca **closed**, o sistema dispara mensagem ao LEAD:
-
-> Olá! Confirmas que o consultor fechou contigo esse negócio?  
-> [Fechei negócio – podem me remover]  
-> [Não fechei – mantenham-me ativo na lista]
-
-2️⃣ Se lead confirmar — `confirmed_closed_by_consultor = true`  
- → o lead **nunca mais será redistribuído**
-
-3️⃣ Se lead negar — sistema mantém “contacted” ou “lost”
-
-> Nota: consultor nunca vê esta confirmação, nem histórico.
+| Campo | Descrição |
+|--------|-----------|
+| id | UUID |
+| status | new / contacted / closed / lost |
+| name | Nome |
+| email | Email |
+| phone | Telefone |
+| interest_services | Serviços de interesse |
+| interest_regions | Regiões desejadas |
+| annual_income | Rendimento anual |
+| created_at | Timestamp legível |
+| created_at_unix | Timestamp técnico |
+| notes | Observações |
+| close_status_identified_at | Momento em que o sistema detectou um closed |
+| processed | (somente em Leads History, última coluna) |
 
 ---
 
-## 🧠 Campo `processed` — como funciona
+# 2 — PH_Dashboard
 
-| Situação | processed |
-|----------|-----------|
-| Lead acabou de entrar na sheet | false |
-| Lead foi movido para próximo consultor | true na versão anterior |
-| Lead foi enviado para orphan_leads | true |
-| ADMIN redistribuiu manualmente | true |
-| Lead fechado e confirmado | true (futuro semi-congelado) |
+Abas principais:
 
-> Um registro com `processed=true` **nunca entra em novo matching ou redistribuição**.
+## 2.1 captured_leads
+Todos os leads captados, com colunas extra:
+
+| Campo extra | Função |
+|-------------|--------|
+| source | Origem (bot / form / outro) |
+| matching_sheet_ids | Lista ordenada por prioridade (string “A, B, C”) |
+| next_sheet_index | Índice da próxima sheet |
+| saved_in_current_sheet_id | Planilha onde o lead está actualmente |
 
 ---
 
-## 🌱 orphan_leads (Dashboard)
+## 2.2 orphan_leads
+Leads sem match no momento da entrada.
+
+| Campo extra | Função |
+|-------------|--------|
+| source | Origem |
+
+---
+
+## 2.3 consultores_clientes
 
 | Campo | Função |
 |--------|--------|
-| id | Identificador |
-| interest_services / regions | Dados para matching |
-| matching_sheet_ids | Lista potencial gerada |
-| next_sheet_index | Próxima tentativa |
-| processed | false até ser recolocado |
-| notes | tracking interno |
-
-- Quando surgir novo consultor ou atualizar configurações, backend reprocessa esta aba.
-- Quando lead for redistribuído, processed=true e ele sai desta aba.
+| sheet_id | ID da sheet |
+| company_name | Nome comercial |
+| personal_name_for_contact | Nome pessoal |
+| total_leads | Leads já recebidos |
+| open_leads | Leads activos |
+| closed_leads | Leads fechados |
+| commission_value | Valor da comissão |
+| total_earned | Soma teórica das comissões |
+| active | Disponível p/ receber leads |
+| notes | Notas |
+| conversion_rate | % |
 
 ---
 
-## ⚙ Backend - Triggers
+## 2.4 total_earned
+Soma total das células `total_earned` da aba consultores_clientes.
+
+---
+
+# 🔔 Notificações Telegram
+
+## Quando um lead entra numa folha:
+- Consultor recebe notificação se `receive_notification_on_telegram_when_new_lead === true`  
+- Admin sempre recebe notificação  
+- Os textos são diferentes (mensagem para admin ≠ mensagem para consultor)
+
+---
+
+# 🔄 Ciclo Completo do Lead
+
+## 1. Entrada
+Quando o lead é captado:
+- Guardado em `captured_leads`
+- Enviado para `<consultant_sheet>.Leads`
+- Inserido em `<consultant_sheet>.Leads History`
+- Notificações enviadas conforme flags
+
+---
+
+## 2. Matching inicial
+
+Filtros:
+1. active = true  
+2. provided_services compatível  
+3. regions_of_service compatível  
+
+Ordenação:
+- Por `commission_value` (desc)
+
+Resultado gerado:
+
+matching_sheet_ids = "sheetX, sheetY, sheetZ"
+next_sheet_index = 0
+
+yaml
+Copy code
+
+---
+
+## 3. Redistribuição Automática
+
+### Redistribui automaticamente quando:
+| Acção do consultor | Resultado |
+|--------------------|-----------|
+| Apaga lead com status = new/contacted/lost | Vai para próximo da lista (next_sheet_index + 1) |
+| Marca lost | Vai para próximo |
+
+---
+
+### Não redistribui automaticamente quando:
+| Caso | Tratamento |
+|------|------------|
+| Lead CLOSED apagado | Admin é notificado e deve decidir a ação |
+
+---
+
+# ⚠ Fluxo especial — CONSULTOR APAGA LEAD CLOSED
+
+Quando o backend detecta:
+
+- Lead existe em Leads History  
+- Lead NÃO existe mais em Leads  
+- status = closed  
+
+Então dispara:
+
+## Mensagem no Telegram ao ADMIN:
+
+> “Há um lead apagado com status 'closed'.  
+> ID: X  
+> Sheet: Y  
+> O que deseja fazer?”
+
+### BOTÕES:
+
+1. **Redistribuir**  
+   - Envia para a próxima folha por ordem de prioridade  
+   - processed = true
+
+2. **Confirmar 'closed'**  
+   - processed = true (lead congelado)
+
+3. **Notificar <personal_name_for_contact>**  
+   - Envia mensagem ao consultor:  
+     “Você apagou um lead marcado como CLOSED. User: X, ID: Y. Isto gera notificação automática.”
+
+4. **Deletei porque fechei negócio**  
+   - processed = true  
+   - Lead permanece closed e congelado
+
+5. **Deletei porque o user foi perdido**  
+   - Lead é redirecionado para a próxima folha  
+   - processed = true
+
+Após qualquer selecção:
+
+> “Evite deletar leads directamente. Deletar um lead CLOSED gera notificações automáticas para garantir que nada seja perdido.”
+
+---
+
+# 🚫 O Lead NÃO recebe notificação de closed
+
+Quando status = closed:
+- Admin recebe **“Lead convertido!!”**
+- Consultor recebe **“Lead fechado! ID: X, Nome: Y”** apenas se:  
+  `receive_notification_on_telegram_when_close_lead === true`
+
+---
+
+# ♻ Sobrescrita de Leads Existentes
+
+Quando o utilizador volta ao bot:
+
+1. O backend procura o lead pelo `id`.
+2. Se existir, mostra ao utilizador:
+
+> “Já há um user associado a esta conta com os seguintes dados:  
+> [nome, email, regiões, serviços, etc.]  
+> Deseja sobrescrever?”
+
+3. Se aceitar:
+   - Dados actualizados em todas as sheets necessárias  
+   - Mantém-se o mesmo ID  
+   - Leads History regista a nova versão
+
+---
+
+# 🌱 orphan_leads — Lógica completa
+
+- Leads sem match inicial são colocados em `orphan_leads`.  
+- Sempre que:
+  - entra um novo lead,  
+  - um consultor altera flags,  
+  - um consultor activa a sheet,  
+  → backend tenta dar match novamente.
+
+- Quando adoptado:
+  - Enviado para a folha  
+  - Guardado em Leads History  
+  - processed = true
+
+---
+
+# ⚙ Triggers (Node.js + SheetsAPI + Telegram Bot API)
 
 | Trigger | Ação |
 |---------|------|
-| Novo lead | Matching + notificação |
-| Consultor apagou lead `lost` ou `contacted` | Redistribuir automaticamente |
-| Consultor apagou lead `closed` | Notificar admin (decision required) |
-| Consultor marca closed | Notificar lead (confirmação) |
-| Lead confirma fechamento | Congela lead (não redistribuir) |
-| Lead nega fechamento | Pode ser redistribuído |
-| ADMIN redistribui manualmente | Renascido como `new` na próxima sheet |
+| Novo lead | Matching + salvar + notificações |
+| Consultor apaga lead (não closed) | Redistribuir |
+| Consultor apaga lead closed | Notificação para admin (escolha obrigatória) |
+| Lead volta ao bot | Proposta de sobrescrita |
+| Admin escolhe “Redistribuir” | Lead renasce como new na próxima sheet |
+| Alterações em consultores_clientes | Reprocessar orphan_leads |
+| Flags alteradas no Control Panel | Reprocessar orphan_leads |
+| Pós-selecção no apagado de closed | Mensagem educativa para consultor |
 
 ---
 
-## 🚫 O que os consultores **NUNCA** podem ver
+# 🚫 O que consultores NÃO podem ver
 
-| Item oculto | Motivo |
-|-------------|--------|
-| matching_sheet_ids | Evita competição / desconforto |
-| previous_sheet_id / origem | Confidencial |
-| processed flag | Lógica backend |
-| confirmed_closed_by_consultor | Proteção de privacidade |
-| total_earned (comissões do admin) | Financeiro privado |
-| histórico completo do lead | Proteção estratégica |
-
----
-
-## 📌 Confirmado pelo administrador
-
-✔ Leads CLOSED permanecem no Dashboard com status `closed`  
-✔ Admin recebe notificação se consultor apagar um lead fechado  
-✔ Admin pode decidir manualmente redistribuir ou não  
-✔ Lead renasce como `new` quando redistribuído manualmente  
-✔ Consultor nunca vê histórico, prioridade ou sheet anteriores  
-✔ Confirmed_closed_by_consultor bloqueia redistribuição futura  
-✔ Não há override manual de prioridade entre consultores  
+- matching_sheet_ids  
+- next_sheet_index  
+- origem anterior  
+- histórico completo (Leads History)  
+- processed  
+- total_earned global  
+- lógica interna do dashboard  
 
 ---
 
-## 💻 Pronto para implementação
+# 🛠 Stack Tecnológica
 
-Pode ser implementado com:
-- Node.js backend (cron + webhooks + Telegram Bot API)
-- Google Apps Script ou Sheets API
-- Firebase / MongoDB para tracking real
-- Telegram bot para consultores, admin e lead
+- Node.js + Typescript  
+- SheetsAPI  
+- Telegram Bot API  
+- Render (Worker 24/7)  
+*(Sem base de dados por agora)*
 
 ---
 
-> Este documento descreve TODA a lógica de negócio.  
-> Uma IA (ex: Claude, Codeium, Cursor, GPT-Code) pode transformar isto em:  
-> 📊 Modelos de BD → 🛠 APIs → 🤖 Bot → 📈 Dashboard → 🔗 Automação.
+# ✔ Concluído
+Este documento representa toda a lógica real do sistema Portugal Houses — Roteamento Automático de Leads.
