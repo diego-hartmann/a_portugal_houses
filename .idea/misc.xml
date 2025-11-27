@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_21" default="true" project-jdk-name="17 (2)" project-jdk-type="JavaSDK">
+    <output url="file://$PROJECT_DIR$/out" />
+  </component>
+  <component name="SettingPersistent">
+    <option name="settingEntity">
+      <SettingEntity>
+        <option name="channelId" value="TABQ7vjOf-f01323dgTD-HDBTDHMILL1AE6nEiC7RkDAjfFZWu86ZyE72H2Ilrb7s_QSuPJlJVJc7NSqUeEZTsiOncNXiEMaGNX2Vg_5vNwCzI9z_Arn200OX9u6pfg4MrpSKGCg" />
+        <option name="didAccessToken" value="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjoiajdkUGNoU0F0SmZxWnFIcVZDdmVWenFpK2R5ZTFtNk1lV2RHVDl0Q1NJN25lWTRWaWpQSGtzN3ZaQ2p4TlNNenZvMUs0VUo2QXF4d3VaOGo1SHA0STJ5d2liTkRja2x5YXJRWFhidHNCblB1b0hUdTVUMlp0dkFheHpDaGxsN25VNHJ1cnc1MzNyVWgxSXc4V2cycUJlbFlRZ2NZUHlTbmxSQnNZcVo3ZjM5dDRlcnVzc3B6TFR3R3hQcmpLdllQSjhFZjJKL2RMR0c4TmRHMldqYmp2eWxRbTQ3Zml0b3lrcUg1bUNudGR0MHI5bzVYc0tuOXRyU3dNcWllZ01Hb2R0eDNmcFVKUGw5SGoxTjd4WUJSek9MUEFkM2NuZUc3SlNsaWM3N1dTcjA9IiwiZXhwIjoxNzUyMjI2NjM1fQ.p-ISZtsoiXYP0cFiWvgdyTom3t9_rkttn9uwfa0EMYw" />
+        <option name="modelType" value="Deepseek-32" />
+        <option name="uid" value="9e433f5e9ad0ab97da57bf224f51765cdefa40c9ad7fdcc36f65ef40a1763069" />
+      </SettingEntity>
+    </option>
+  </component>
+</project>

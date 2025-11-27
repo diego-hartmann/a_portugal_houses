@@ -18,7 +18,7 @@ import { getBatch, updateCell } from '../infra/sheets.js'
 export enum STEP {
   IDLE = 'idle',
   ASK_NAME_FULL = 'ask_name_full',
-  SELECT_REGIONS = 'select_regions', // TODO check, refactor?
+  SELECT_REGIONS = 'select_regions',
   ASK_EMAIL = 'ask_email',
   ASK_PHONE_COUNTRY = 'ask_phone_country',
   ASK_PHONE_NATIONAL = 'ask_phone_national',
