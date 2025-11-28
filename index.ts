@@ -1,54 +1,40 @@
-import { runWebserver } from './src/services/webserver.js'
-runWebserver()
+import { createGoogleClients } from './src/google-sheets/client.js'
+import { getBaseEnvironment } from './src/utils/env.js'
+import { DashboardRepository } from './src/google-sheets/dashboardRepository.js'
+import { ConfigService } from './src/utils/config.js'
+import { NotificationService } from './src/notifications/notificationService.js'
+import { LeadRoutingEngine } from './src/lead-routing/leadRoutingEngine.js'
+import { ConsultantSheetFactory } from './src/consultant-sheet-factory/factory.js'
+import { OrphanProcessor } from './src/orphan-reprocessing/orphanProcessor.js'
+import { SheetService } from './src/google-sheets/sheetService.js'
+import { createBot } from './src/telegram-bot/bot.js'
+import { DeleteWatcher } from './src/admin-alerts/deleteWatcher.js'
+import { logger } from './src/utils/logger.js'
 
-// --- KeepAlive (se estiveres a auto-pingar tua URL pública) ---
-import { startKeepAlive } from './src/infra/keepAlive.js'
-const keep = startKeepAlive()
+async function bootstrap() {
+  const baseEnv = getBaseEnvironment()
+  const googleClients = createGoogleClients()
+  const dashboardRepo = new DashboardRepository(googleClients.sheets, baseEnv.dashboardSheetId)
+  const configService = new ConfigService(dashboardRepo)
+  const runtimeConfig = await configService.loadRuntimeConfig()
 
-// --- Bot + handlers ---
-import { BOT, ensurePollingOnce } from './src/infra/bot.js'
+  const notifier = new NotificationService(runtimeConfig)
+  const routingEngine = new LeadRoutingEngine(dashboardRepo, notifier)
+  const sheetService = new SheetService()
+  const orphanProcessor = new OrphanProcessor(dashboardRepo, routingEngine)
+  const deleteWatcher = new DeleteWatcher(notifier)
 
-import { attachHandlers, startClosedWatcher, stopClosedWatcher } from './src/flows/handlers.js'
-;(async () => {
-  await ensurePollingOnce() // <- limpa webhook e inicia UM polling
-  attachHandlers(BOT)
-  startClosedWatcher(BOT)
-})()
+  const consultants = await dashboardRepo.listConsultants()
+  const sheetRepoFactory = (sheetId: string) => sheetService.createConsultantRepository(sheetId)
 
-// Polling errors: silencia 409 do handover e loga o resto
-BOT.on('polling_error', err => {
-  console.error('Polling error:', err?.message || err)
-})
+  createBot(runtimeConfig, { engine: routingEngine, consultants, sheetRepoFactory })
 
-// --- Encerramento limpo (SIGINT/SIGTERM/erros não tratados) ---
-let shuttingDown = false
+  await orphanProcessor.reprocessOrphans(consultants, sheetRepoFactory)
 
-async function stop(reason = 'desconhecido') {
-  if (shuttingDown) return
-  shuttingDown = true
-  console.log('Encerrando… (' + reason + ')')
-
-  try {
-    await stopClosedWatcher()
-  } catch (_) {}
-  try {
-    keep?.stop?.()
-  } catch (_) {}
-  try {
-    await BOT.stopPolling()
-  } catch (_) {}
-
-  process.exit(0)
+  logger.info('Lead routing ecosystem initialized')
 }
 
-process.once('SIGINT', () => stop('SIGINT'))
-process.once('SIGTERM', () => stop('SIGTERM'))
-
-process.on('unhandledRejection', err => {
-  console.error('unhandledRejection:', err)
-  stop('unhandledRejection')
-})
-process.on('uncaughtException', err => {
-  console.error('uncaughtException:', err)
-  stop('uncaughtException')
+bootstrap().catch(err => {
+  logger.error('Failed to bootstrap backend', err)
+  process.exit(1)
 })
