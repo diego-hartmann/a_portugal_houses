@@ -13,7 +13,7 @@ export const EXPECTED_HEADERS = [
   'name', // B
   'email', // C
   'phone', // D
-  'interest', // E
+  'interest_services', // E
   'regions', // F
   'created_at', // G
   'telegram_chat_id_for_bot_notifications', // H
@@ -27,9 +27,13 @@ export const EXPECTED_HEADERS = [
  * Reduz 1 chamada READ por lead.
  */
 export async function appendLeadRespectingHeaders(lead: Lead) {
-  // monta a linha exatamente na ordem definida
-  // @ts-ignore
-  const row: string[] = EXPECTED_HEADERS.map(header => lead[header] ?? '')
+  const row: string[] = EXPECTED_HEADERS.map(header => {
+    if (header === 'interest_services') return (lead as any).interest_services || (lead as any).interest || ''
+    if (header === 'regions') return (lead as any).interest_regions || lead.regions || ''
+    if (header === 'created_at' && (lead as any).created_at_unix) return `${lead.created_at} (${(lead as any).created_at_unix})`
+    // @ts-ignore
+    return lead[header] ?? ''
+  })
 
   // A1:K1 → “append abaixo” usando a mesma largura de colunas
   await appendRow('Leads!A1:K1', row)

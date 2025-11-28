@@ -6,7 +6,7 @@ export const DASHBOARD_ID = process.env.DASHBOARD_SHEET_ID
 
 export class DashboardSheet {
   readonly googleAccount: GoogleAccount
-  private envMap: EnvMap = {}
+  private envMap: EnvMap | null = null
 
   constructor(googleAccount: GoogleAccount) {
     this.googleAccount = googleAccount
@@ -20,7 +20,7 @@ export class DashboardSheet {
     if (!this.envMap) {
       await this.initEnvMap()
     }
-    const envValue = this.envMap[envKey.toUpperCase()]
+    const envValue = (this.envMap ?? {})[envKey.toUpperCase()]
     if (!envValue) {
       throw new Error(`$Missing key in Dashboard .ENV: ${envKey}`)
     }

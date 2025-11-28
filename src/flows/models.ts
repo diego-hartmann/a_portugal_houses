@@ -9,22 +9,19 @@ export enum Status {
   FECHADO = 'fechado',
 }
 
-export enum Region {
-  LISBOA = 'lisboa',
-  VISEU = 'viseu',
-}
-
 export interface Lead {
   code: string
   name: string
   email: string
   phone: string
-  regions: string
+  interest_services: string
+  interest_regions: string
+  annual_income: string
+  regions?: string
   created_at: string
+  created_at_unix?: number | string
   status: Status
-}
-
-export const REGION_CODE: Record<Region, string> = {
-  lisboa: 'L',
-  viseu: 'V',
+  notes?: string
+  close_status_identified_at?: string
+  processed?: string
 }

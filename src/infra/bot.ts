@@ -1,10 +1,14 @@
-// src/bot/telegram.ts (exemplo de caminho)
+// src/infra/bot.ts
 
 import TelegramBot, { StartPollingOptions } from 'node-telegram-bot-api'
-import { TELEGRAM_BOT_TOKEN, NODE_ENV } from '../config/env.js'
+import { getEnvironment } from '../environment.js'
+
+const environment = await getEnvironment()
 
 // Cria o bot SEM polling automático
-export const BOT: TelegramBot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false })
+export const BOT: TelegramBot = new TelegramBot(environment.secrets.telegramBotToken, {
+  polling: false,
+})
 
 let _started = false
 
@@ -25,5 +29,5 @@ export async function ensurePollingOnce(): Promise<void> {
   await BOT.startPolling(pollingOpts as any)
 
   _started = true
-  console.log(`Bot iniciado em ${NODE_ENV} (long polling)…`)
+  console.log(`Bot iniciado em ${environment.runtime.env} (long polling)…`)
 }

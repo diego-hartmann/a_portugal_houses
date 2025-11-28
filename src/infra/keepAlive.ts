@@ -1,15 +1,17 @@
-import { APP_BASE_URL } from '../config/env.js'
+import { getEnvironment } from '../environment.js'
+
+const environment = await getEnvironment()
 
 export function startKeepAlive(intervalMs = 12 * 60 * 1000) {
   // ~12 min
-  if (!APP_BASE_URL) {
+  if (!environment.secrets.appBaseUrl) {
     console.warn('KeepAlive: APP_BASE_URL ausente, keepalive inativo.')
     return { stop() {} }
   }
 
   let timer = setInterval(async () => {
     try {
-      const url = `${APP_BASE_URL.replace(/\/+$/, '')}/health`
+      const url = `${environment.secrets.appBaseUrl.replace(/\/+$/, '')}/health`
       await fetch(url, { cache: 'no-store' })
       // console.log('KeepAlive ping ->', url);
     } catch (_) {

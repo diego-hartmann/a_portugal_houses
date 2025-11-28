@@ -1,55 +1,61 @@
-import { Lead, Region } from './models.js'
+import { Lead } from './models.js'
+import { getEnvironment } from '../environment.js'
+import { titleCase, randomBase36 } from './utils.js'
 
-import { REGION_CODE } from './models.js'
-
-import { WA_CONSULTANT_PHONE, WA_MESSAGE_TEMPLATE } from '../config/env.js'
-
-import { titleCase, randomBase36, splitFirstLast } from './utils.js'
+const environment = await getEnvironment()
 
 // ____________________________________________________________________
 
-export function buildLeadCode(regions: string): string {
-  const firstRegion: Region = regions.split(',')[0] as Region
+export function buildLeadCode(regionsCsv: string): string {
+  const firstRegion = regionsCsv.split(',')[0]?.trim().toUpperCase() || 'X'
+  const sanitized = firstRegion.replace(/[^A-Z0-9]/g, '') || 'X'
+  const prefix = sanitized.slice(0, 3).padEnd(3, 'X')
 
-  const rCode = REGION_CODE[firstRegion] || 'X'
-
-  return `PH-${rCode}-${randomBase36(4)}`
+  return `PH-${prefix}-${randomBase36(4)}`
 }
 
-export function buildWhatsAppLink(lead: Lead) {
-  if (!WA_CONSULTANT_PHONE) return null
-
-  const { first, last } = splitFirstLast(lead.name || '')
-
-  const message = (WA_MESSAGE_TEMPLATE || '')
-    .replace(/{name}/g, titleCase(lead.name || ''))
-    .replace(/{first_name}/g, titleCase(first))
-    .replace(/{last_name}/g, titleCase(last))
-    .replace(
-      /{regions}/g,
-      lead.regions
-        .split(',')
-        .map(region => titleCase(region))
-        .join(', '),
-    )
-    .replace(/{code}/g, lead.code || '')
-    .replace(/\\n/g, '\n')
-  return `https://wa.me/${WA_CONSULTANT_PHONE}?text=${encodeURIComponent(message)}`
+export function buildWhatsAppLink(_lead: Lead) {
+  // Não há número de WhatsApp do consultor nas .ENV atuais
+  return null
 }
 
-export function regionsKeyboard(selectedRegions: Region[] = []) {
-  const rows = [Region.LISBOA, Region.VISEU].map(region => {
-    const isOn = selectedRegions.includes(region)
-    const label = `${isOn ? '✅' : '⬜️'} ${titleCase(region)}`
-
-    return [{ text: label, callback_data: `region_toggle:${region}` }]
+function multiSelectKeyboard(
+  options: string[],
+  selected: string[] = [],
+  prefix: string,
+  doneAction: string,
+  cancelAction: string,
+) {
+  const rows = options.map(option => {
+    const isOn = selected.includes(option)
+    const label = `${isOn ? '✅' : '⬜️'} ${titleCase(option)}`
+    return [{ text: label, callback_data: `${prefix}:${option}` }]
   })
 
-  // ultima linha: Cancelar (esq) | Confirmar (dir)
   rows.push([
-    { text: 'Cancelar', callback_data: 'region_cancel' },
-    { text: 'Confirmar', callback_data: 'region_done' },
+    { text: 'Cancelar', callback_data: cancelAction },
+    { text: 'Confirmar', callback_data: doneAction },
   ])
 
   return { reply_markup: { inline_keyboard: rows } }
+}
+
+export function servicesKeyboard(selectedServices: string[] = []) {
+  return multiSelectKeyboard(
+    environment.globalVariablesMap.providedServices,
+    selectedServices,
+    'service_toggle',
+    'service_done',
+    'service_cancel',
+  )
+}
+
+export function regionsKeyboard(selectedRegions: string[] = []) {
+  return multiSelectKeyboard(
+    environment.globalVariablesMap.regionsOfService,
+    selectedRegions,
+    'region_toggle',
+    'region_done',
+    'region_cancel',
+  )
 }
