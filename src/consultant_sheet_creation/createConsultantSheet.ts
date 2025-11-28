@@ -1,126 +1,204 @@
-import { google } from 'googleapis'
+import { google } from "googleapis";
 
-const LOG = '[createConsultantSheet]'
+const LOG = "[createConsultantSheet]";
+
 const SCOPES = [
-  'https://www.googleapis.com/auth/drive',
-  'https://www.googleapis.com/auth/spreadsheets',
-]
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/spreadsheets"
+];
 
-// A ÚNICA env real
-const DASHBOARD_ID = process.env.DASHBOARD_SHEET_ID
+// -----------------------------------------------------------------------------
+// ENV LOCAIS (mínimo necessário para sequer falar com o Google)
+// -----------------------------------------------------------------------------
 
-// Lê a .ENV do Dashboard
-async function loadDashboardEnv(sheets: any) {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: DASHBOARD_ID,
-    range: '.ENV!A2:B',
-  })
+const DASHBOARD_ID = process.env.DASHBOARD_SHEET_ID;
+const SERVICE_ACCOUNT_EMAIL = process.env.SHEET_SERVICE_ACCOUNT;
+const RAW_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY;
 
-  const rows = res.data.values ?? []
-  const env: Record<string, string> = {}
-
-  for (const [k, v] of rows) {
-    env[k.trim().toUpperCase()] = (v ?? '').trim()
-  }
-
-  return env
+if (!DASHBOARD_ID) {
+  throw new Error(`${LOG} Missing process.env.DASHBOARD_SHEET_ID`);
+}
+if (!SERVICE_ACCOUNT_EMAIL) {
+  throw new Error(`${LOG} Missing process.env.SHEET_SERVICE_ACCOUNT`);
+}
+if (!RAW_PRIVATE_KEY) {
+  throw new Error(`${LOG} Missing process.env.GOOGLE_PRIVATE_KEY`);
 }
 
-// Função principal
-export async function createConsultantSheet({
-  consultantName,
-  consultantEmail,
-  companyName,
-}: {
-  consultantName: string
-  consultantEmail: string
-  companyName?: string
-}) {
-  if (!DASHBOARD_ID) throw new Error('Missing DASHBOARD_SHEET_ID')
+const PRIVATE_KEY = RAW_PRIVATE_KEY.replace(/\\n/g, "\n");
 
-  // 1) Cliente temporário só para ler a .ENV
-  const tempAuth = new google.auth.JWT()
-  const tempSheets = google.sheets({ version: 'v4', auth: tempAuth })
+// -----------------------------------------------------------------------------
+// Google clients
+// -----------------------------------------------------------------------------
 
-  const env = await loadDashboardEnv(tempSheets)
+const auth = new google.auth.JWT({
+  email: SERVICE_ACCOUNT_EMAIL,
+  key: PRIVATE_KEY,
+  scopes: SCOPES
+});
 
-  // 2) Criar cliente real com a private key & service account
-  const serviceAccount = env['SHEET_SERVICE_ACCOUNT']
-  const privateKey = env['GOOGLE_PRIVATE_KEY'].replace(/\\n/g, '\n')
+const drive = google.drive({ version: "v3", auth });
+const sheets = google.sheets({ version: "v4", auth });
 
-  const auth = new google.auth.JWT(serviceAccount, undefined, privateKey, SCOPES)
-  const drive = google.drive({ version: 'v3', auth })
-  const sheets = google.sheets({ version: 'v4', auth })
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
 
-  const blueprintId = env['LEAD_BLUEPRINT_SHEET_ID']
-  const adminEmail = env['ADMIN_EMAIL']
+type EnvMap = Record<string, string>;
 
-  // 3) Duplicar Blueprint
+function validateEmail(email: string) {
+  const r = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!r.test(email)) {
+    throw new Error(`${LOG} Invalid email: ${email}`);
+  }
+}
+
+async function loadDashboardEnv(): Promise<EnvMap> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: DASHBOARD_ID!,
+    range: ".ENV!A2:B"
+  });
+
+  const rows = res.data.values ?? [];
+
+  if (!rows.length) {
+    throw new Error(`${LOG} .ENV sheet in Dashboard is empty`);
+  }
+
+  const env: EnvMap = {};
+  for (const [key, value] of rows) {
+    env[key.trim().toUpperCase()] = (value ?? "").trim();
+  }
+
+  return env;
+}
+
+
+function envOrFail(env: EnvMap, key: string): string {
+  const v = env[key.toUpperCase()];
+  if (!v) {
+    throw new Error(`${LOG} Missing key in Dashboard .ENV: ${key}`);
+  }
+  return v;
+}
+
+// -----------------------------------------------------------------------------
+// Main function
+// -----------------------------------------------------------------------------
+
+export interface CreateConsultantParams {
+  consultantName: string;
+  consultantEmail: string;
+  companyName?: string;
+}
+
+export interface CreateConsultantResult {
+  sheetId: string;
+  sheetUrl: string;
+  consultantName: string;
+  consultantEmail: string;
+}
+
+export async function createConsultantSheet(
+  params: CreateConsultantParams
+): Promise<CreateConsultantResult> {
+  const { consultantName, consultantEmail, companyName } = params;
+
+  console.log(
+    `${LOG} Creating sheet for ${consultantName} <${consultantEmail}>`
+  );
+
+  validateEmail(consultantEmail);
+
+  // 1) Lê .ENV da Dashboard (tudo em UPPERCASE)
+  const env = await loadDashboardEnv();
+  const blueprintId = envOrFail(env, "LEAD_BLUEPRINT_SHEET_ID");
+  const adminEmail = envOrFail(env, "ADMIN_EMAIL");
+  const botEmail = envOrFail(env, "SHEET_SERVICE_ACCOUNT"); // o próprio bot
+
+  // 2) Duplicar Blueprint
   const copy = await drive.files.copy({
     fileId: blueprintId,
-    requestBody: { name: `Leads – ${consultantName}` },
-  })
+    requestBody: { name: `Leads – ${consultantName}` }
+  });
 
-  const newSheetId = copy.data.id
-  const sheetUrl = `https://docs.google.com/spreadsheets/d/${newSheetId}`
+  const newSheetId = copy.data.id;
+  if (!newSheetId) {
+    throw new Error(`${LOG} drive.files.copy returned no id`);
+  }
 
-  console.log(LOG, '➜ created:', newSheetId)
+  const sheetUrl = `https://docs.google.com/spreadsheets/d/${newSheetId}`;
+  console.log(`${LOG} Sheet created: ${newSheetId}`);
 
-  // 4) Permissões
-  const addPerm = async (email: string, notify = false) =>
+  // 3) Permissões (admin, bot, consultor)
+  const addPerm = (email: string, notify: boolean) =>
     drive.permissions.create({
-      fileId: newSheetId!,
-      requestBody: { type: 'user', role: 'writer', emailAddress: email },
-      sendNotificationEmail: notify,
-    })
+      fileId: newSheetId,
+      requestBody: {
+        type: "user",
+        role: "writer",
+        emailAddress: email
+      },
+      sendNotificationEmail: notify
+    });
 
-  await addPerm(adminEmail, false) // admin
-  await addPerm(serviceAccount, false) // bot
-  await addPerm(consultantEmail, true) // consultor
+  await addPerm(adminEmail, false);
+  await addPerm(botEmail, false);
+  await addPerm(consultantEmail, true);
 
-  // 5) Copiar global_variables
+  console.log(`${LOG} Permissions applied.`);
+
+  // 4) Copiar global_variables da Dashboard
   const gv = await sheets.spreadsheets.values.get({
-    spreadsheetId: DASHBOARD_ID,
-    range: 'global_variables!A1:C',
-  })
+    spreadsheetId: DASHBOARD_ID!,
+    range: "global_variables!A1:C" // sem header, listas diretas
+  });
+
+  const gvValues = gv.data.values ?? [];
+  if (!gvValues.length) {
+    throw new Error(`${LOG} Dashboard.global_variables is empty`);
+  }
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: newSheetId!,
-    range: 'global_variables!A1',
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: gv.data.values ?? [] },
-  })
+    range: "global_variables!A1",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: gvValues }
+  });
 
-  // 6) Registrar consultor no dashboard
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: DASHBOARD_ID,
-    range: 'consultores_clientes!A2:K',
-    valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
+  console.log(`${LOG} global_variables populated.`);
+
+  // 5) Registar consultor na Dashboard
+  sheets.spreadsheets.values.append({
+    spreadsheetId: DASHBOARD_ID!,
+    range: "consultores_clientes!A2:K",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
     requestBody: {
       values: [
         [
-          newSheetId,
-          companyName ?? '',
-          consultantName,
-          0,
-          0,
-          0,
-          '', // commission_value
-          0, // total_earned
-          true, // active
-          '',
-          '',
-        ],
-      ],
-    },
-  })
+          newSheetId,          // sheet_id
+          companyName ?? "",   // company_name
+          consultantName,      // personal_name_for_contact
+          0,                   // total_leads
+          0,                   // open_leads
+          0,                   // closed_leads
+          "",                  // commission_value
+          0,                   // total_earned
+          true,                // active
+          "",                  // notes
+          ""                   // conversion_rate
+        ]
+      ]
+    }
+  });
 
-  // 7) Retorno final
+  console.log(`${LOG} Consultant registered in consultores_clientes.`);
+
   return {
-    sheetId: newSheetId!,
+    sheetId: newSheetId,
     sheetUrl,
     consultantName,
-    consultantEmail,
-  }
+    consultantEmail
+  };
 }
