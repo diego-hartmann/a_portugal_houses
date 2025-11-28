@@ -36,7 +36,7 @@ export async function createConsultantSheet({
   consultantEmail: string
   companyName?: string
 }) {
-  if (!DASHBOARD_ID) throw new Error('Missing DASHBOARD_SHEET_ID ')
+  if (!DASHBOARD_ID) throw new Error('Missing DASHBOARD_SHEET_ID')
 
   // 1) Cliente temporário só para ler a .ENV
   const tempAuth = new google.auth.JWT()
