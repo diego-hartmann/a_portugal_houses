@@ -1,141 +1,240 @@
 # Business Logic Blueprint — Sistema Inteligente de Lead Routing (PH Ecosystem)
 
 ## 🎯 Visão Geral
+
 Sistema automático de captação, distribuição e controlo de leads imobiliários com:
-- Matching por serviços + regiões  
-- Prioridade por comissão  
-- Redistribuição automática  
-- Protecção contra deletações indevidas  
-- Histórico invisível ao consultor  
-- Notificações Telegram (admin e consultor)  
+
+- Matching por serviços + regiões
+- Prioridade por comissão
+- Redistribuição automática
+- Protecção contra deletações indevidas
+- Histórico invisível ao consultor
+- Notificações Telegram (admin e consultor)
 - Dashboard global
+- Gestão automática de folhas dos consultores
+- Preenchimento automático de variáveis pelo backend
+- Proteção automática de colunas via Apps Script
 
 ---
 
-# 📁 Estrutura de Planilhas
+# 📁 Estrutura Global do Sistema
+
+O sistema funciona com:
+
+1. **PH_Dashboard** (folha mestre, privada)
+2. **Leads_Blueprint** (modelo usado para criar folhas dos consultores)
+3. **Folhas individuais dos consultores** (criadas pelo backend que duplica a leads_blueprint)
+4. **Backend Node.js**
+5. **Service Account** para leitura/escrita nas sheets
+6. **Telegram Bot**
+
+### 🔐 Segurança:
+
+- A Dashboard é **privada**, com acesso apenas:
+  - ao **admin** (tu)
+  - à **service account** (como editora)
+- Consultores **não** têm acesso à Dashboard
+- Variáveis sensíveis são guardadas na Dashboard na aba .env
 
 ---
 
-# 1 — Leads_Blueprint (template para todas as planilhas de consultores)
-
-Cada consultor possui uma cópia com as abas:
-
-| Aba | Função |
-|------|--------|
-| Start Here | Tutorial do consultor |
-| Control Panel | Definições pessoais + flags de notificações + serviços + regiões |
-| Leads | Leads activos (escritos pelo backend) |
-| Leads History | Snapshot bloqueado + escondido com proteção |
-| global_variables | Variáveis para validações e dropdowns |
+# 🗂 Estrutura das Planilhas
 
 ---
 
-## 1.1 Control Panel — Campos
+# 1 — PH_Dashboard (Mestre)
 
-company_name
-personal_name_for_contact
-receive_email_from_lead
-email
-cc_emails
-receive_whatsapp_from_lead
-whatsapp_phone
-receive_notification_on_telegram_when_important_communication (SEMPRE true, bloqueado)
-receive_notification_on_telegram_when_new_lead
-receive_notification_on_telegram_when_close_lead
-telegram_chat_ids_for_notifications
-provided_services
-regions_of_service
-active
+A Dashboard é o **núcleo** do sistema. Nela ficam:
 
-yaml
-Copy code
+### **Abas principais**
+
+- **captured_leads**
+- **orphan_leads**
+- **consultores_clientes**
+- **total_earned**
+- **global_variables**
+- **.env**
 
 ---
 
-## 1.2 Estrutura do Lead (Leads / Leads History)
+## 1.1 Aba `.env` (da Dashboard)
 
-| Campo | Descrição |
-|--------|-----------|
-| id | UUID |
-| status | new / contacted / closed / lost |
-| name | Nome |
-| email | Email |
-| phone | Telefone |
-| interest_services | Serviços de interesse |
-| interest_regions | Regiões desejadas |
-| annual_income | Rendimento anual |
-| created_at | Timestamp legível |
-| created_at_unix | Timestamp técnico |
-| notes | Observações |
-| close_status_identified_at | Momento em que o sistema detectou um closed |
-| processed | (somente em Leads History, última coluna) |
+Contém **variáveis sensíveis** usadas como _runtime config_:
 
----
-
-# 2 — PH_Dashboard
-
-Abas principais:
-
-## 2.1 captured_leads
-Todos os leads captados, com colunas extra:
-
-| Campo extra | Função |
-|-------------|--------|
-| source | Origem (bot / form / outro) |
-| matching_sheet_ids | Lista ordenada por prioridade (string “A, B, C”) |
-| next_sheet_index | Índice da próxima sheet |
-| saved_in_current_sheet_id | Planilha onde o lead está actualmente |
+- google_private_key
+- lead_blueprint_sheet_id
+- telegram_bot_token
+- app_base_url
+- local_telegram_bot_token
+- local_port
+- dev_telegram_bot_token
+- dev_port
+- prod_telegram_bot_token
+- prod_port
+- sheet_service_account
+- TELEGRAM_ADMIN_CHAT_ID
+- wa_message_template
+- email_message_template
 
 ---
 
-## 2.2 orphan_leads
-Leads sem match no momento da entrada.
+## 1.2 Aba global_variables (Dashboard)
 
-| Campo extra | Função |
-|-------------|--------|
-| source | Origem |
+Variáveis e listas usadas pelo sistema para:
 
----
+- dropdowns
+- validações
+- configurações
 
-## 2.3 consultores_clientes
-
-| Campo | Função |
-|--------|--------|
-| sheet_id | ID da sheet |
-| company_name | Nome comercial |
-| personal_name_for_contact | Nome pessoal |
-| total_leads | Leads já recebidos |
-| open_leads | Leads activos |
-| closed_leads | Leads fechados |
-| commission_value | Valor da comissão |
-| total_earned | Soma teórica das comissões |
-| active | Disponível p/ receber leads |
-| notes | Notas |
-| conversion_rate | % |
+Backend as lê e seta nas folhas de cada consultor
 
 ---
 
-## 2.4 total_earned
-Soma total das células `total_earned` da aba consultores_clientes.
+## 1.3 captured_leads (Dashboard)
+
+Leads adicionados a sheets de consultores, com as colunas extras:
+
+- `source`
+- `matching_sheet_ids`
+- `next_sheet_index`
+- `saved_in_current_sheet_id`
 
 ---
 
-# 🔔 Notificações Telegram
+---
 
-## Quando um lead entra numa folha:
-- Consultor recebe notificação se `receive_notification_on_telegram_when_new_lead === true`  
-- Admin sempre recebe notificação  
-- Os textos são diferentes (mensagem para admin ≠ mensagem para consultor)
+## 1.4 orphan_leads (Dashboard)
+
+Leads sem match inicial, com a única coluna extra:
+
+- `source`
+
+---
+
+## 1.5 consultores_clientes
+
+Contém:
+
+- id
+- company_name
+- personal_name_for_contact
+- total_leads
+- open_leads
+- closed_leads
+- commission_value
+- total_earned
+- active
+- notes
+- conversion_rate
+
+---
+
+## 1.6 total_earned
+
+- soma de todas as `total_earned` de consultores_clientes
+
+---
+
+# 2 — Leads_Blueprint (Template das folhas dos consultores)
+
+Cada consultor recebe uma cópia idêntica.
+
+### Abas:
+
+- `Start Here`
+- `Control Panel`
+- `Leads`
+- `Leads History`
+- `global_variables` (preenchido pelo backend)
+- Apps Script que protege colunas automaticamente
+
+---
+
+## 2.1 Control Panel — Campos
+
+- company_name
+- personal_name_for_contact
+- receive_email_from_lead
+- email
+- cc_emails
+- receive_whatsapp_from_lead
+- whatsapp_phone
+- receive_notification_on_telegram_when_important_communication (sempre true)
+- receive_notification_on_telegram_when_new_lead
+- receive_notification_on_telegram_when_close_lead
+- telegram_chat_ids_for_notifications
+- provided_services
+- regions_of_service
+- active
+
+---
+
+## 2.2 Estrutura do Lead (Leads / Leads History)
+
+| Campo                      | Descrição                                 |
+| -------------------------- | ----------------------------------------- |
+| id                         | UUID                                      |
+| status                     | new / contacted / closed / lost           |
+| name                       | Nome                                      |
+| email                      | Email                                     |
+| phone                      | Telefone                                  |
+| interest_services          | Serviços                                  |
+| interest_regions           | Regiões                                   |
+| annual_income              | Rendimento                                |
+| created_at                 | Timestamp                                 |
+| created_at_unix            | Timestamp técnico                         |
+| notes                      | Observações                               |
+| close_status_identified_at | Marca quando o sistema detecta closed     |
+| **processed**              | (somente em Leads History, última coluna) |
+
+---
+
+## 2.3 Apps Script (Blueprint)
+
+Todas as cópias herdam o script:
+
+- Bloqueia automaticamente colunas sensíveis
+- Mantém apenas:
+  - admin
+  - service account  
+    com permissão de edição
+- Consultores podem editar apenas as colunas autorizadas
+
+### Script (resumo)
+
+Protege:
+
+- `global_variables!A2:C`
+- `Leads!A, C, D, E, F, G, H, I, J, L`
+
+Mantendo a linha 1 livre para fórmulas (ex.: URL de permissões).
+
+---
+
+# 3 — Folhas dos Consultores (criadas pelo backend)
+
+O backend:
+
+1. Duplica a Blueprint
+2. Renomeia
+3. Adiciona o consultor como editor
+4. Adiciona admin + bot como editores
+5. Preenche a aba `global_variables` com valores da Dashboard
+6. Regista no PH_Dashboard.consultores_clientes
+7. Notifica consultor e admin via Telegram
 
 ---
 
 # 🔄 Ciclo Completo do Lead
 
 ## 1. Entrada
+
 Quando o lead é captado:
+
 - Guardado em `captured_leads`
 - Enviado para `<consultant_sheet>.Leads`
 - Inserido em `<consultant_sheet>.Leads History`
+- Apps Script protege colunas
 - Notificações enviadas conforme flags
 
 ---
@@ -143,163 +242,159 @@ Quando o lead é captado:
 ## 2. Matching inicial
 
 Filtros:
-1. active = true  
-2. provided_services compatível  
-3. regions_of_service compatível  
+
+- active = true
+- provided_services compatibles
+- regions_of_service compatibles
 
 Ordenação:
-- Por `commission_value` (desc)
 
-Resultado gerado:
+- `commission_value` desc
 
-matching_sheet_ids = "sheetX, sheetY, sheetZ"
-next_sheet_index = 0
+Backend grava:
 
-yaml
-Copy code
-
----
-
-## 3. Redistribuição Automática
-
-### Redistribui automaticamente quando:
-| Acção do consultor | Resultado |
-|--------------------|-----------|
-| Apaga lead com status = new/contacted/lost | Vai para próximo da lista (next_sheet_index + 1) |
-| Marca lost | Vai para próximo |
-
----
-
-### Não redistribui automaticamente quando:
-| Caso | Tratamento |
-|------|------------|
-| Lead CLOSED apagado | Admin é notificado e deve decidir a ação |
+- matching_sheet_ids
+- next_sheet_index
+- saved_in_current_sheet_id
 
 ---
 
 # ⚠ Fluxo especial — CONSULTOR APAGA LEAD CLOSED
 
-Quando o backend detecta:
+Se o backend detecta:
 
-- Lead existe em Leads History  
-- Lead NÃO existe mais em Leads  
-- status = closed  
+- lead existe em Leads History
+- lead desapareceu de Leads
+- status = closed
 
-Então dispara:
-
-## Mensagem no Telegram ao ADMIN:
+O admin recebe:
 
 > “Há um lead apagado com status 'closed'.  
 > ID: X  
 > Sheet: Y  
 > O que deseja fazer?”
 
-### BOTÕES:
+Botões:
 
-1. **Redistribuir**  
-   - Envia para a próxima folha por ordem de prioridade  
-   - processed = true
+1. **Redistribuir** → envia para próxima folha
+2. **Confirmar closed** → processed=true
+3. **Notificar consultor**
 
-2. **Confirmar 'closed'**  
-   - processed = true (lead congelado)
+Quando o consultor então é notificado:
 
-3. **Notificar <personal_name_for_contact>**  
-   - Envia mensagem ao consultor:  
-     “Você apagou um lead marcado como CLOSED. User: X, ID: Y. Isto gera notificação automática.”
+> “Ops! Parece que você deletou um lead cujo status era "closed".  
+> ID: X  
+> Sheet: Y”
 
-4. **Deletei porque fechei negócio**  
-   - processed = true  
-   - Lead permanece closed e congelado
+Botões:
 
-5. **Deletei porque o user foi perdido**  
-   - Lead é redirecionado para a próxima folha  
-   - processed = true
+1. **Deletei porque fechei negócio :)** → processed=true
+2. **Deletei porque perdi o lead :(** → redistribuir e processed=true
 
-Após qualquer selecção:
+Após resposta:
 
-> “Evite deletar leads directamente. Deletar um lead CLOSED gera notificações automáticas para garantir que nada seja perdido.”
+> “Evite deletar leads directamente…”
 
 ---
 
-# 🚫 O Lead NÃO recebe notificação de closed
+# 🚫 O Lead NÃO recebe notificação de mudança de status para "closed"
 
-Quando status = closed:
-- Admin recebe **“Lead convertido!!”**
-- Consultor recebe **“Lead fechado! ID: X, Nome: Y”** apenas se:  
-  `receive_notification_on_telegram_when_close_lead === true`
+Apenas:
+
+- Admin recebe: “Lead convertido!!”
+- Consultor recebe (se flag=true): “Lead fechado! ID: X, Nome: Y”
 
 ---
 
 # ♻ Sobrescrita de Leads Existentes
 
-Quando o utilizador volta ao bot:
+Quando um utilizador inicia o bot:
 
-1. O backend procura o lead pelo `id`.
-2. Se existir, mostra ao utilizador:
-
-> “Já há um user associado a esta conta com os seguintes dados:  
-> [nome, email, regiões, serviços, etc.]  
-> Deseja sobrescrever?”
-
-3. Se aceitar:
-   - Dados actualizados em todas as sheets necessárias  
-   - Mantém-se o mesmo ID  
-   - Leads History regista a nova versão
+- Backend procura lead pelo id
+- Se existir, mostra os dados actuais
+- Pergunta:
+  > “Deseja sobrescrever?”
+- Atualiza todas as sheets relacionadas
+- Leads History guarda uma nova versão
 
 ---
 
-# 🌱 orphan_leads — Lógica completa
+# 🌱 orphan_leads — Lógica
 
-- Leads sem match inicial são colocados em `orphan_leads`.  
-- Sempre que:
-  - entra um novo lead,  
-  - um consultor altera flags,  
-  - um consultor activa a sheet,  
-  → backend tenta dar match novamente.
-
+- Entrada para leads sem match
+- Backend tenta recolocar sempre que:
+  - novo lead entra
+  - consultor muda flags
+  - consultor fica active
 - Quando adoptado:
-  - Enviado para a folha  
-  - Guardado em Leads History  
-  - processed = true
+  - enviado para Leads do consultor
+  - enviado para Leads History do consultor
+  - enviado para captured_leads do Dashboard
+  - removido de orphan_leads do Dashboard
 
 ---
 
-# ⚙ Triggers (Node.js + SheetsAPI + Telegram Bot API)
+# ⚙ Backend (Node.js + Typescript)
 
-| Trigger | Ação |
-|---------|------|
-| Novo lead | Matching + salvar + notificações |
-| Consultor apaga lead (não closed) | Redistribuir |
-| Consultor apaga lead closed | Notificação para admin (escolha obrigatória) |
-| Lead volta ao bot | Proposta de sobrescrita |
-| Admin escolhe “Redistribuir” | Lead renasce como new na próxima sheet |
-| Alterações em consultores_clientes | Reprocessar orphan_leads |
-| Flags alteradas no Control Panel | Reprocessar orphan_leads |
-| Pós-selecção no apagado de closed | Mensagem educativa para consultor |
+### Responsável por:
 
----
+- Criar cópias da Blueprint
+- Preencher as global_variables das folhas dos consultores
+- Fazer matching dos leads com os consultores
+- Notificar admin/consultor
+- Detectar deletes
+- Re-distribuir leads
+- Escrever no Dashboard
+- Reprocessar orphan_leads
+- Garantir integridade das sheets
 
-# 🚫 O que consultores NÃO podem ver
+### Exemplos de chamadas API:
 
-- matching_sheet_ids  
-- next_sheet_index  
-- origem anterior  
-- histórico completo (Leads History)  
-- processed  
-- total_earned global  
-- lógica interna do dashboard  
+- `drive.files.copy`
+- `drive.permissions.create`
+- `sheets.values.update`
+- `sheets.values.get`
 
 ---
 
-# 🛠 Stack Tecnológica
+# 🔐 Permissões (modelo final)
 
-- Node.js + Typescript  
-- SheetsAPI  
-- Telegram Bot API  
-- Render (Worker 24/7)  
-*(Sem base de dados por agora)*
+### Dashboard:
+
+- **Admin** → Editor
+- **Service Account** → Editor
+- **Ninguém mais**
+
+### Folhas dos Consultores:
+
+- **Consultor** → Editor
+- **Admin** → Editor
+- **Service Account** → Editor
+
+### Proteções internas:
+
+- Apps Script remove o consultor dos intervalos protegidos
+- Consultor edita apenas o Control Panel
+- Consultor nunca vê Dashboard
 
 ---
 
-# ✔ Concluído
-Este documento representa toda a lógica real do sistema Portugal Houses — Roteamento Automático de Leads.
+# ✔ Conclusão
+
+Este documento descreve:
+
+- Toda a lógica de negócio
+- Estrutura de sheets
+- Estrutura de abas
+- Apps Script
+- Processo de duplicação
+- Preenchimento de global_variables
+- Segurança e permissões
+- Fluxo completo do lead
+- Tratamento de deletes
+- Sobrescrita
+- Orphan leads
+- Matching
+- Lógica de notificação
+
+Perfeito para implementação, manutenção e onboarding técnico.

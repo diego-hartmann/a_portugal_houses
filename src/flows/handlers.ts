@@ -14,7 +14,6 @@ import { titleCase, normalizeInternationalPhone, splitFirstLast } from './utils.
 
 import { getBatch, updateCell } from '../infra/sheets.js'
 
-
 export enum STEP {
   IDLE = 'idle',
   ASK_NAME_FULL = 'ask_name_full',
@@ -27,7 +26,9 @@ export enum STEP {
 }
 export function executeActionBasedOnCurrentStep(
   step: STEP,
-  bot: TelegramBot, msg: TelegramBot.Message){
+  bot: TelegramBot,
+  msg: TelegramBot.Message,
+) {
   const mapStepToAction: Record<STEP, () => void> = {
     [STEP.IDLE]: (): void => {
       bot.sendMessage(msg.chat.id, 'Gostaria de começar?', WELCOME_KEYBOARD)
@@ -48,7 +49,7 @@ export function executeActionBasedOnCurrentStep(
       bot.sendMessage(
         msg.chat.id,
         `É um prazer falar com você, ${titleCase(first)} ${titleCase(last)}!\n\nEm quais regiões você quer arrendar?`,
-        regionsKeyboard(getDraft(msg.chat.id).draft.regions || [])
+        regionsKeyboard(getDraft(msg.chat.id).draft.regions || []),
       )
     },
     [STEP.SELECT_REGIONS]: (): void => {
@@ -91,9 +92,11 @@ export function executeActionBasedOnCurrentStep(
       bot.sendMessage(
         msg.chat.id,
         'Selecione as regiões de interesse (pode escolher várias)',
-        regionsKeyboard(getDraft(msg.chat.id).draft.interest, getDraft(msg.chat.id).draft.regions || []),
+        regionsKeyboard(
+          getDraft(msg.chat.id).draft.interest,
+          getDraft(msg.chat.id).draft.regions || [],
+        ),
       )
-
     },
     [STEP.ASK_EMAIL]: (): void => {
       const email = (msg.text || '').trim()
@@ -103,7 +106,11 @@ export function executeActionBasedOnCurrentStep(
       }
       setDraft({ email: email.toLowerCase() }, msg.chat.id)
       setCurrentStep(STEP.ASK_PHONE_COUNTRY, msg.chat.id)
-      bot.sendMessage(msg.chat.id, 'Qual é o código telefônico do seu país?', PHONE_CC_QUICK_KEYBOARD)
+      bot.sendMessage(
+        msg.chat.id,
+        'Qual é o código telefônico do seu país?',
+        PHONE_CC_QUICK_KEYBOARD,
+      )
     },
     [STEP.ASK_PHONE_COUNTRY]: (): void => {
       const raw = (msg.text || '').trim()
@@ -506,10 +513,7 @@ export function attachHandlers(bot: TelegramBot) {
 
     if (/^cancelar$/i.test(msg.text)) {
       initSession(chatId)
-      return bot.sendMessage(
-        chatId,
-        'Entendido! Quando quiser, basta escrever "Começar" ou /start',
-      )
+      return bot.sendMessage(chatId, 'Entendido! Quando quiser, basta escrever "Começar" ou /start')
     }
 
     // atalhos out of flow
@@ -554,7 +558,6 @@ export function attachHandlers(bot: TelegramBot) {
       if (!s?.draft?.phoneNational) {
         setCurrentStep(STEP.ASK_PHONE_NATIONAL, chatId)
         return bot.sendMessage(chatId, 'Agora o seu número (apenas dígitos)')
-
       }
 
       setCurrentStep(STEP.FINALIZING, chatId)
@@ -602,23 +605,16 @@ export function attachHandlers(bot: TelegramBot) {
         await bot.answerCallbackQuery(query.id, {
           text: `${titleCase(opt?.replace('-', ' '))} ${idx >= 0 ? 'removida' : 'adicionada'}`,
         })
-        return bot.editMessageReplyMarkup(
-          regionsKeyboard(current).reply_markup,
-          {
-            chat_id: chatId,
-            message_id: query.message?.message_id,
-          },
-        )
+        return bot.editMessageReplyMarkup(regionsKeyboard(current).reply_markup, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+        })
       }
 
       if (action === 'region_cancel') {
         await bot.answerCallbackQuery(query.id, { text: 'Seleção cancelada' })
         const current = SESSION.get(chatId)?.draft?.regions || []
-        return bot.sendMessage(
-          chatId,
-          'Ok. Pode selecionar novamente:',
-          regionsKeyboard(current),
-        )
+        return bot.sendMessage(chatId, 'Ok. Pode selecionar novamente:', regionsKeyboard(current))
       }
 
       if (action === 'region_done') {

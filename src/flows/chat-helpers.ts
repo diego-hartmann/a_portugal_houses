@@ -1,4 +1,4 @@
-import {  Lead, Region } from './models.js'
+import { Lead, Region } from './models.js'
 
 import { REGION_CODE } from './models.js'
 
@@ -37,7 +37,7 @@ export function buildWhatsAppLink(lead: Lead) {
   return `https://wa.me/${WA_CONSULTANT_PHONE}?text=${encodeURIComponent(message)}`
 }
 
-export function regionsKeyboard( selectedRegions: Region[] = []) {
+export function regionsKeyboard(selectedRegions: Region[] = []) {
   const rows = [Region.LISBOA, Region.VISEU].map(region => {
     const isOn = selectedRegions.includes(region)
     const label = `${isOn ? '✅' : '⬜️'} ${titleCase(region)}`
