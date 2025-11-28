@@ -73,7 +73,6 @@ async function loadDashboardEnv(): Promise<EnvMap> {
   return env;
 }
 
-
 function envOrFail(env: EnvMap, key: string): string {
   const v = env[key.toUpperCase()];
   if (!v) {
@@ -85,41 +84,32 @@ function envOrFail(env: EnvMap, key: string): string {
 // -----------------------------------------------------------------------------
 // Main function
 // -----------------------------------------------------------------------------
-
 export interface CreateConsultantParams {
-  consultantName: string;
-  consultantEmail: string;
-  companyName?: string;
-}
-
-export interface CreateConsultantResult {
-  sheetId: string;
-  sheetUrl: string;
-  consultantName: string;
-  consultantEmail: string;
+  sheetName: string;
+  emailToShareSheet: string;
 }
 
 export async function createConsultantSheet(
   params: CreateConsultantParams
-): Promise<CreateConsultantResult> {
-  const { consultantName, consultantEmail, companyName } = params;
+): Promise<void> {
+  const { emailToShareSheet, sheetName } = params;
 
   console.log(
-    `${LOG} Creating sheet for ${consultantName} <${consultantEmail}>`
+    `${LOG} Creating sheet ${sheetName} for <${emailToShareSheet}>`
   );
 
-  validateEmail(consultantEmail);
+  validateEmail(emailToShareSheet);
 
   // 1) Lê .ENV da Dashboard (tudo em UPPERCASE)
   const env = await loadDashboardEnv();
   const blueprintId = envOrFail(env, "LEAD_BLUEPRINT_SHEET_ID");
   const adminEmail = envOrFail(env, "ADMIN_EMAIL");
-  const botEmail = envOrFail(env, "SHEET_SERVICE_ACCOUNT"); // o próprio bot
+  const botEmail = envOrFail(env, "SHEET_SERVICE_ACCOUNT");
 
   // 2) Duplicar Blueprint
   const copy = await drive.files.copy({
     fileId: blueprintId,
-    requestBody: { name: `Leads – ${consultantName}` }
+    requestBody: { name: `${sheetName}` }
   });
 
   const newSheetId = copy.data.id;
@@ -127,7 +117,7 @@ export async function createConsultantSheet(
     throw new Error(`${LOG} drive.files.copy returned no id`);
   }
 
-  const sheetUrl = `https://docs.google.com/spreadsheets/d/${newSheetId}`;
+  const newSheetUrl = `https://docs.google.com/spreadsheets/d/${newSheetId}`;
   console.log(`${LOG} Sheet created: ${newSheetId}`);
 
   // 3) Permissões (admin, bot, consultor)
@@ -178,8 +168,8 @@ export async function createConsultantSheet(
       values: [
         [
           newSheetId,          // sheet_id
-          companyName ?? "",   // company_name
-          consultantName,      // personal_name_for_contact
+          "",                  // company_name
+          '',                  // personal_name_for_contact
           0,                   // total_leads
           0,                   // open_leads
           0,                   // closed_leads
@@ -194,11 +184,4 @@ export async function createConsultantSheet(
   });
 
   console.log(`${LOG} Consultant registered in consultores_clientes.`);
-
-  return {
-    sheetId: newSheetId,
-    sheetUrl,
-    consultantName,
-    consultantEmail
-  };
 }
