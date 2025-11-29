@@ -1,13 +1,6 @@
 import { getEnvironment } from '../environment.js'
 import { APP } from './src/App.js'
-import {
-  Change,
-  ChangeData,
-  ChangedConsultantSheetEvent,
-} from '../../apps-scripts-payloads-models.js'
-import { Lead } from '../lead_creation/src/flows/models.js'
-
-// Tipos oficiais do evento (garantem validação leve)
+import { Change, ChangeData, ChangedConsultantSheetEvent } from '../../apps-scripts-payloads-models.js'
 
 const environment = await getEnvironment()
 
@@ -48,11 +41,7 @@ export class WebServer {
       try {
         const changedConsultantSheetEvent = req.body as ChangedConsultantSheetEvent
 
-        if (
-          !changedConsultantSheetEvent ||
-          !changedConsultantSheetEvent.id ||
-          !Array.isArray(changedConsultantSheetEvent.changes)
-        ) {
+        if (!changedConsultantSheetEvent || !changedConsultantSheetEvent.id || !Array.isArray(changedConsultantSheetEvent.changes)) {
           return res.status(400).json({ error: 'Invalid payload' })
         }
 

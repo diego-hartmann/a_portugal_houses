@@ -1,286 +1,265 @@
-PH Ecosystem — Business Logic Blueprint (Versão Refatorada)
+# PH Ecosystem — Business Logic Blueprint
 
-1. Visão Geral
+_Versão Final (Reativa, sem Pooling)_
 
-Sistema inteligente de captação e distribuição automática de leads imobiliários, com:
+---
 
-Matching por serviços + regiões
+# 1. Visão Geral
 
-Prioridade por comissão
+Sistema inteligente, 100% reativo, de captação e distribuição automática de leads imobiliários:
 
-Redistribuição automática (orphan recovery)
+- Matching por **serviços + regiões**
+- **Prioridade por comissão**
+- Redistribuição automática (órfãos, lost, deletes)
+- Proteção contra deletes indevidos
+- Histórico invisível ao consultor (via **snapshots automáticos**)
+- Notificações Telegram (admin e consultores)
+- Gestão automática das folhas dos consultores
+- Dashboard global
+- Preenchimento automático de variáveis
+- Apps Script para eventos e proteções
+- Bot Telegram guiado com listas dinâmicas
 
-Proteção contra deletes indevidos
+**Não existe pooling.**  
+Tudo funciona por: **Apps Script → Backend → Ações imediatas**.
 
-Histórico invisível ao consultor
+---
 
-Notificações Telegram (admin e consultores)
+# 2. Arquitetura Global
 
-Gestão automática de folhas de consultores
+## Componentes
 
-Dashboard global
+- **PH_Dashboard** (folha mestre privada)
+- **Leads_Blueprint** (template)
+- **Folhas dos consultores** (geradas pelo backend)
+- **Backend Node.js + Typescript**
+- **Telegram Bot**
+- **Google Service Account**
+- **Apps Script** (eventos e regras de proteção)
 
-Preenchimento automático de variáveis
+## Segurança
 
-Proteções via Apps Script
+- Dashboard: apenas admin + service account
+- Consultor: edita apenas:
+  - `Control Panel`
+  - colunas autorizadas da aba `Leads`
+- Variáveis sensíveis ficam em `.env`
+- Apps Script remove automaticamente permissões sobre áreas protegidas
 
-Bot Telegram com fluxo guiado
+---
 
-2. Arquitetura Global
-   Componentes
+# 3. Estrutura das Planilhas
 
-PH_Dashboard (folha mestre privada)
+---
 
-Leads_Blueprint (template)
+## 3.1 PH_Dashboard (Mestre)
 
-Folhas dos consultores (geradas pelo backend)
+### 3.1.1 .env — Variáveis Sensíveis
 
-Backend Node.js + TS
+- lead_blueprint_sheet_id
+- app_base_url
+- google_private_key
+- sheet_service_account
+- telegram_bot_token (local/dev/prod)
+- port (local/dev/prod)
+- TELEGRAM_ADMIN_CHAT_ID
+- wa_message_template
+- email_message_template
+- admin_email
 
-Telegram Bot
+---
 
-Service Account
-
-Apps Script (proteções nas folhas duplicadas)
-
-Segurança
-
-Dashboard: somente admin + service account
-
-Consultor: edita apenas a sua folha
-
-Variáveis sensíveis: guardadas na aba .env
-
-Apps Script remove o consultor dos ranges protegidos
-
-3. Estrutura das Planilhas
-   3.1 PH_Dashboard (Mestre)
-   3.1.1 .env — Variáveis Sensíveis
-
-lead_blueprint_sheet_id
-
-app_base_url
-
-Tokens (local/dev/prod): telegram_bot_token, port
-
-google_private_key
-
-sheet_service_account
-
-TELEGRAM_ADMIN_CHAT_ID
-
-wa_message_template, email_message_template
-
-3.1.2 global_variables
+### 3.1.2 global_variables
 
 Listas dinâmicas usadas pelo backend e bot:
 
-serviços
+- provided_services
+- regions_of_service
+- status
+- outras listas necessárias
 
-regiões
+Copiadas automaticamente para cada consultor.
 
-status
+---
 
-outras necessárias
+### 3.1.3 captured_leads
 
-Copiadas para cada folha de consultor.
+Campos adicionais usados pelo sistema de routing:
 
-3.1.3 captured_leads
+- source
+- matching_sheet_ids
+- next_sheet_index
+- saved_in_current_sheet_id
 
-Campos adicionais de routing:
+---
 
-source
+### 3.1.4 orphan_leads
 
-matching_sheet_ids
+Leads sem consultor no matching inicial.  
+Mesma estrutura de um lead completo + campo `source`.
 
-next_sheet_index
+---
 
-saved_in_current_sheet_id
+### 3.1.5 consultores_clientes
 
-(O fluxo é explicado em 5.3))\*
+- id
+- company_name
+- personal_name_for_contact
+- total_leads
+- open_leads
+- closed_leads
+- commission_value
+- total_earned
+- online_to_receive_new_leads
+- notes
+- conversion_rate
+- pause
 
-3.1.4 orphan_leads
+---
 
-Leads sem destinatário na entrada.
-Campos idênticos ao lead normal + source.
+### 3.1.6 total_earned
 
-3.1.5 consultores_clientes
+Somatório das comissões de todos os consultores.
 
-id
+---
 
-company_name
+## 3.2 Leads_Blueprint (Template do Consultor)
 
-personal_name_for_contact
+Abas:
 
-total_leads
+- Start Here
+- Control Panel
+- **Control Panel History**
+- Leads
+- Leads History (auditoria)
+- global_variables
+- Apps Script
 
-open_leads
+---
 
-closed_leads
+### 3.2.1 Control Panel — Campos
 
-commission_value
+- company_name
+- personal_name_for_contact
+- email
+- cc_emails
+- whatsapp_phone
+- receive_email_from_lead
+- receive_whatsapp_from_lead
+- notification flags
+- telegram_chat_ids_for_notifications
+- provided_services
+- regions_of_service
+- **online_to_receive_new_leads**
 
-total_earned
+---
 
-online_to_receive_new_leads
+### 3.2.2 Estrutura dos Leads
 
-notes
+| Campo             | Descrição                       |
+| ----------------- | ------------------------------- |
+| id                | UUID                            |
+| status            | new / contacted / closed / lost |
+| name              | string                          |
+| email             | string                          |
+| phone             | string                          |
+| interest_services | lista                           |
+| interest_regions  | lista                           |
+| annual_income     | número                          |
+| created_at        | timestamp                       |
+| created_at_unix   | timestamp                       |
+| notes             | texto                           |
+| closed_at         | timestamp quando vira closed    |
 
-conversion_rate
+---
 
-pause
-
-3.1.6 total_earned
-
-Soma das comissões de todos os consultores.
-
-3.2 Leads_Blueprint (Template do Consultor)
-Abas
-
-Start Here
-
-Control Panel
-
-Control Panel History
-
-Leads
-
-Leads History
-
-global_variables
-
-Apps Script
-
-3.2.1 Control Panel — Campos
-
-company_name
-
-personal_name_for_contact
-
-email / cc_emails
-
-whatsapp_phone
-
-receive_email_from_lead
-
-receive_whatsapp_from_lead
-
-notification flags (close/new/important)
-
-telegram_chat_ids_for_notifications
-
-provided_services
-
-regions_of_service
-
-online_to_receive_new_leads
-
-3.2.2 Estrutura dos Leads
-Campo Descrição
-id UUID
-status new / contacted / closed / lost
-name, email, phone Dados
-interest_services Lista
-interest_regions Lista
-annual_income Número
-created_at Timestamp
-created_at_unix Timestamp técnico
-notes Observações
-close_status_identified_at Marca quando vira closed
-processed Só no History
-3.2.3 Apps Script (Proteções)
+### 3.2.3 Apps Script — Proteções
 
 Protege:
 
-global_variables!A2:C
+- global_variables!A2:C
+- Leads!A, C, D, E, F, G, H, I, J, L
+- LeadsHistory!A, C, D, E, F, G, H, I, J, L, M
 
-Leads!A, C, D, E, F, G, H, I, J, L
+Consultor só edita:
 
-LeadsHistory!A, C, D, E, F, G, H, I, J, L, M
+- Control Panel
+- colunas não protegidas de Leads
 
-Consultores só podem editar:
+---
 
-Control Panel
+# 4. Folhas dos Consultores (backend)
 
-Colunas autorizadas em Leads
+Quando o backend cria uma nova folha:
 
-4. Folhas dos Consultores (backend)
+1. Duplica a blueprint
+2. Renomeia
+3. Concede acesso ao consultor
+4. Mantém admin + service account + bot
+5. Copia global_variables
+6. Regista em consultores_clientes
+7. Envia notificações (consultor + admin)
 
-Backend faz:
+---
 
-Duplicar blueprint
+# 5. Ciclo Completo do Lead
 
-Renomear
+---
 
-Dar acesso ao consultor
+## 5.1 Entrada (Bot Telegram)
 
-Garantir admin + bot + service account
+O bot recolhe:
 
-Preencher global_variables
+- name
+- email
+- phone
+- interest_services[]
+- interest_regions[]
+- annual_income
 
-Registar em consultores_clientes
+---
 
-Notificar consultor + admin
+## 5.2 Envio ao Backend
 
-5. Ciclo Completo do Lead
-   5.1 Entrada (Bot Telegram)
-
-Bot coleta:
-
-name
-
-email
-
-phone
-
-interest_services[]
-
-interest_regions[]
-
-annual_income
-
-5.2 Envio ao Backend
+Chamada:
 processNewLead(draft)
-
 5.3 Matching (Backend)
-Filtros
-
+Filtros:
 online_to_receive_new_leads = true
 
 serviços compatíveis
 
 regiões compatíveis
 
-Ordenação
-
+Ordenação:
 commission_value DESC
 
 5.3.1 Routing
-
-Para a lista de consultores compatíveis:
+Para consultores compatíveis:
 
 matching_sheet_ids → lista ordenada
 
-next_sheet_index → inicia em 0
+next_sheet_index → começa em 0
 
-saved_in_current_sheet_id → consultor do assign inicial
+saved_in_current_sheet_id → destino atual
 
-Se houver MATCH
-
+Se houver match:
 Backend:
 
-salva em captured_leads
+grava em captured_leads
 
-salva na folha do consultor
+grava na folha do consultor (Leads)
 
-salva no Leads History
+grava snapshot em Leads History
 
 envia notificações
 
 incrementa next_sheet_index
 
-Retorno ao bot:
+Bot recebe:
 
+json
+Copy code
 {
 "matched": true,
 "allow_whatsapp": true,
@@ -288,14 +267,14 @@ Retorno ao bot:
 "consultant_whatsapp": "...",
 "consultant_email": "..."
 }
+Se não houver match:
+lead vai para orphan_leads
 
-Se NÃO houver MATCH
+bot recebe { "matched": false }
 
-Backend:
-salva em orphan_leads apenas
-{ "matched": false }
-
-6. Fluxo Telegram (resumo visual)
+6. Fluxo Telegram (Resumo)
+   sql
+   Copy code
    START
    → ASK_NAME_FULL
    → ASK_INTEREST_SERVICES
@@ -307,185 +286,147 @@ salva em orphan_leads apenas
    → CONFIRM
    → BACKEND
    → RESULT
+   Listas dinâmicas:
 
-Listas dinâmicas
+interest_services = global_variables.provided_services
 
-serviços = global_variables.provided_services
-
-regiões = global_variables.regions_of_service
-
-Ecrã final
-
-Nome
-
-Email
-
-Telefone
-
-Serviços
-
-Regiões
-
-Rendimento
-
-Botões:
-
-Confirmar
-
-Editar algo
+interest_regions = global_variables.regions_of_service
 
 7. Fluxo de Deletes (Lead CLOSED)
-   Quando detetado:
+   Quando um lead closed some da aba Leads:
 
-lead existia no History
+Condições:
 
-foi removido do Leads
+existia no Leads History
+
+foi removido
 
 status era closed
 
 Admin recebe:
 
-Botões:
-
 Redistribuir
 
-Confirmar closed (processed = true)
+Confirmar closed
 
 Notificar consultor
 
-Consultor recebe:
+Se consultor for notificado:
 
-Botões:
+Fechei negócio → marca closed
 
-Fechei negócio → processed=true
-
-Perdi o lead → redistribuir + processed
+Perdi o lead → redistribui automaticamente
 
 8. Sobrescrita de Leads
+   Se o utilizador do bot já existe:
 
-Se o utilizador do bot já existe:
+Bot mostra dados atuais
 
-Bot mostra dados
+Pergunta se deseja sobrescrever
 
-Pergunta se quer sobrescrever
-
-Backend atualiza Leads + cria nova versão no History
+Backend atualiza Leads e cria novo snapshot no History
 
 9. orphan_leads — Reprocessamento
-
-Recalcula quando:
+   Reprocessado quando:
 
 entra novo lead
 
-consultor muda serviços
+consultor altera serviços
 
-consultor muda regiões
+consultor altera regiões
 
 Quando adotado:
 
-movido para Leads do consultor
+movido para Leads
 
-Leads History
+snapshot criado
 
-captured_leads
+atualizado em captured_leads
 
-removido do orphan_leads
+removido de orphan_leads
 
-10. Pooling Inteligente
+10. Modelo Reativo: Apps Script → Backend
+    Eliminado pooling.
+    Somente Apps Script dispara mudanças relevantes.
 
-Backend periodicamente:
+Eventos que alteram prioridades:
+Novo lead
 
-deteta deletes indevidos
+Alteração em provided_services
 
-deteta closed sem notificação
+Alteração em regions_of_service
 
-processa órfãos
+Alteração em online_to_receive_new_leads
 
-redistribui conforme routing
+Deleção de lead
 
-reage a mudanças no Control Panel
+Mudança de status (lost, closed, contacted)
 
-mantém coerência entre Dashboard e folhas
-
-10.1 Monitoriza
-
-Control Panel + History
-
-Leads + History
-
-captured_leads
-
-orphan_leads
-
-consultores_clientes
-
----
-
-Eventos que mexem na prioridade:
-
-Novo lead (via bot)
-
-Backend calcula matching_sheet_ids
-
-Define next_sheet_index = 0
-
-Decide a primeira folha
-
-Consultor muda Control Panel (serviços, regiões)
-
-Apps Script manda evento
-
-Backend:
-
-reavalia leads deste consultor
-
-reavalia órfãos
-
-recalcula prioridades onde fizer sentido
-
-Criar novo consultor
-
-Ao criar folha via backend, o backend:
-
-já pode iterar sobre órfãos e ver quem passa a ter match com este consultor
-
-atualizar matching_sheet_ids dos leads relevantes.
-
-Redistribuir lead (por delete ou status=lost)
-
-Backend não recalcula a ordem:
-usa a lista existente e apenas incrementa next_sheet_index.
-
-11. JSON do Bot (compacto)
-    {
-    "steps": [
-    "ASK_NAME_FULL",
-    "ASK_INTEREST_SERVICES",
-    "SELECT_REGIONS",
-    "ASK_EMAIL",
-    "ASK_PHONE",
-    "ASK_ANNUAL_INCOME",
-    "SHOW_SUMMARY",
-    "FINALIZING"
-    ],
-    "dynamic_lists": {
-    "interest_services": "global_variables.provided_services",
-    "interest_regions": "global_variables.regions_of_service"
-    },
-    "final_backend_call": "processNewLead(draft)",
-    "fields": [
-    "name",
-    "email",
-    "phone",
-    "interest_services[]",
-    "interest_regions[]",
-    "annual_income"
-    ],
-    "backend_response": {
-    "matched": "boolean",
-    "allow_whatsapp": "boolean",
-    "allow_email": "boolean",
-    "consultant_whatsapp": "string|null",
-    "consultant_email": "string|null"
+11. Modelo Oficial de Eventos (Apps Script → Backend)
+    ts
+    Copy code
+    export interface ChangedConsultantSheetEvent {
+    id: string;
+    changes: Change[];
     }
-    }
+
+export interface Change {
+tabName: "Leads" | "Control Panel";
+changeType: "closed" | "lost" | "deleted" | "contacted" | "control_panel_changed";
+data: ChangeData;
+timestamp?: string;
+}
+
+export type ChangeData = ChangedLead | ChangedControlPanel;
+
+export interface ChangedLead {
+old: Lead;
+new: Lead | null;
+}
+
+export interface ChangedControlPanel {
+old: ConsultantControlPanel;
+new: ConsultantControlPanel;
+}
+
+export type ChangePayloadTypeMapper = {
+closed: ChangedLead;
+lost: ChangedLead;
+deleted: ChangedLead;
+contacted: ChangedLead;
+control_panel_changed: ChangedControlPanel;
+}; 12. JSON do Bot (Compacto)
+json
+Copy code
+{
+"steps": [
+"ASK_NAME_FULL",
+"ASK_INTEREST_SERVICES",
+"SELECT_REGIONS",
+"ASK_EMAIL",
+"ASK_PHONE",
+"ASK_ANNUAL_INCOME",
+"SHOW_SUMMARY",
+"FINALIZING"
+],
+"dynamic_lists": {
+"interest_services": "global_variables.provided_services",
+"interest_regions": "global_variables.regions_of_service"
+},
+"final_backend_call": "processNewLead(draft)",
+"fields": [
+"name",
+"email",
+"phone",
+"interest_services[]",
+"interest_regions[]",
+"annual_income"
+],
+"backend_response": {
+"matched": "boolean",
+"allow_whatsapp": "boolean",
+"allow_email": "boolean",
+"consultant_whatsapp": "string|null",
+"consultant_email": "string|null"
+}
+}

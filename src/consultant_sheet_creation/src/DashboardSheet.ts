@@ -5,12 +5,12 @@ type EnvMap = Record<string, string>
 export const DASHBOARD_ID = process.env.DASHBOARD_SHEET_ID
 
 export class DashboardSheet {
-  readonly googleAccount: GoogleAccount
+  readonly botServiceAccount: GoogleAccount
   readonly id: string
   private envMap: EnvMap | null = null
 
   constructor(googleAccount: GoogleAccount, id: string) {
-    this.googleAccount = googleAccount
+    this.botServiceAccount = googleAccount
     this.id = id
   }
 
@@ -24,16 +24,18 @@ export class DashboardSheet {
     }
     const envValue = (this.envMap ?? {})[envKey.toUpperCase()]
     if (!envValue) {
-      throw new Error(`$Missing key in Dashboard .ENV: ${envKey}`)
+      throw new Error(`Missing key in Dashboard .ENV: ${envKey}`)
     }
     return envValue
   }
 
   private async getEnvMapFromGoogleSheets(): Promise<EnvMap> {
-    const res = await this.googleAccount.SHEETS.spreadsheets.values.get({
+    const res = await this.botServiceAccount.SHEETS.spreadsheets.values.get({
       spreadsheetId: DASHBOARD_ID!,
       range: '.env!A2:L',
     })
+
+    console.log('$$$$$$$$$$$$$$$', res)
 
     const rows = res.data.values ?? []
 

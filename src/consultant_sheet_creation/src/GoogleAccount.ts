@@ -19,10 +19,7 @@ export class GoogleAccount {
     return new google.auth.JWT({
       email: serviceAccountEmail,
       key: privateKey.replace(/\\n/g, '\n'),
-      scopes: [
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/spreadsheets',
-      ],
+      scopes: ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets'],
     })
   }
 }

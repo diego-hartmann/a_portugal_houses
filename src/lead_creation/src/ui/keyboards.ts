@@ -1,10 +1,6 @@
 export const PHONE_CC_QUICK_KEYBOARD = {
   reply_markup: {
-    keyboard: [
-      [{ text: '🇵🇹 Portugal (+351)' }],
-      [{ text: '🇧🇷 Brasil (+55)' }],
-      [{ text: 'Outro país' }],
-    ],
+    keyboard: [[{ text: '🇵🇹 Portugal (+351)' }], [{ text: '🇧🇷 Brasil (+55)' }], [{ text: 'Outro país' }]],
     resize_keyboard: true,
     one_time_keyboard: true,
   },

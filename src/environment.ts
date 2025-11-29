@@ -41,10 +41,7 @@ function requireRuntime(name: string): string {
 
 const SUPPORTED_ENVS = ['LOCAL', 'DEV', 'PROD'] as const
 
-async function loadDashboardSecrets(
-  dashboardSheet: DashboardSheet,
-  env: string,
-): Promise<DashboardSecrets> {
+async function loadDashboardSecrets(dashboardSheet: DashboardSheet, env: string): Promise<DashboardSecrets> {
   const required = async (key: string): Promise<string> => dashboardSheet.getEnvValue(key)
 
   const normalizedEnv = env.trim().toUpperCase()
@@ -55,16 +52,7 @@ async function loadDashboardSecrets(
   const tokenKey = `${normalizedEnv}_TELEGRAM_BOT_TOKEN`
   const portKey = `${normalizedEnv}_PORT`
 
-  const [
-    telegramBotToken,
-    telegramAdminChatId,
-    appBaseUrl,
-    leadBlueprintSheetId,
-    waMessageTemplate,
-    emailMessageTemplate,
-    portRaw,
-    adminEmail,
-  ] = await Promise.all([
+  const [telegramBotToken, telegramAdminChatId, appBaseUrl, leadBlueprintSheetId, waMessageTemplate, emailMessageTemplate, portRaw, adminEmail] = await Promise.all([
     required(tokenKey),
     required('TELEGRAM_ADMIN_CHAT_ID'),
     required('APP_BASE_URL'),
@@ -93,7 +81,7 @@ async function loadDashboardSecrets(
 }
 
 async function loadGlobalVariables(dashboardSheet: DashboardSheet): Promise<string[][]> {
-  const res = await dashboardSheet.googleAccount.SHEETS.spreadsheets.values.get({
+  const res = await dashboardSheet.botServiceAccount.SHEETS.spreadsheets.values.get({
     spreadsheetId: dashboardSheet.id,
     range: 'global_variables!A1:C',
   })
@@ -123,14 +111,12 @@ function mapGlobalVariables(values: string[][]): GlobalVariableMap {
 export async function getEnvironment(): Promise<EnvironmentConfig> {
   if (cachedEnvironment) return cachedEnvironment
 
-  const botUser = new GoogleUser(
-    requireRuntime('SHEET_SERVICE_ACCOUNT'),
-    requireRuntime('GOOGLE_PRIVATE_KEY'),
-  )
-  const botServiceAccount = new GoogleAccount(botUser)
-  const dashboardSheet = new DashboardSheet(botServiceAccount, requireRuntime('DASHBOARD_SHEET_ID'))
+  const botUser = new GoogleUser(process.env.SHEET_SERVICE_ACCOUNT!, process.env.GOOGLE_PRIVATE_KEY!)
 
-  const secrets = await loadDashboardSecrets(dashboardSheet, requireRuntime('ENV'))
+  const botServiceAccount = new GoogleAccount(botUser)
+  const dashboardSheet = new DashboardSheet(botServiceAccount, process.env.DASHBOARD_SHEET_ID!)
+
+  const secrets = await loadDashboardSecrets(dashboardSheet, process.env.ENV!)
   const globalVariables = await loadGlobalVariables(dashboardSheet)
   const globalVariablesMap = mapGlobalVariables(globalVariables)
 

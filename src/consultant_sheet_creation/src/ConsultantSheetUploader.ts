@@ -1,26 +1,26 @@
 import { DASHBOARD_ID, DashboardSheet } from './DashboardSheet.js'
 import { ConsultantSheet } from './ConsultantSheet.js'
+import { getEnvironment } from '../../environment.js'
+
+const env = await getEnvironment()
 
 export class ConsultantSheetUploader {
   consultantSheet: ConsultantSheet
-  dashboardSheet: DashboardSheet
 
   constructor(consultantSheet: ConsultantSheet, dashboardSheet: DashboardSheet) {
     this.consultantSheet = consultantSheet
-    this.dashboardSheet = dashboardSheet
   }
 
   async saveConsultantSheetInGoogleDrive(consultantSheet: ConsultantSheet): Promise<void> {
     const { emailToShareSheet, sheetName } = consultantSheet
     console.log(`Creating sheet ${sheetName} for <${emailToShareSheet}>`)
 
-    const blueprintId = await this.dashboardSheet.getEnvValue('LEAD_BLUEPRINT_SHEET_ID')
+    const blueprintId = env.secrets.leadBlueprintSheetId
 
-    const newConsultantSheetFromBlueprint =
-      await this.dashboardSheet.googleAccount.DRIVE.files.copy({
-        fileId: blueprintId,
-        requestBody: { name: `${sheetName}` },
-      })
+    const newConsultantSheetFromBlueprint = await env.dashboardSheet.botServiceAccount.DRIVE.files.copy({
+      fileId: blueprintId,
+      requestBody: { name: `${sheetName}` },
+    })
 
     const newSheetId = newConsultantSheetFromBlueprint.data.id
     if (!newSheetId) {
@@ -30,34 +30,32 @@ export class ConsultantSheetUploader {
     const newSheetUrl = `https://docs.google.com/spreadsheets/d/${newSheetId}`
     console.log(`Sheet created: ${newSheetUrl}`)
 
-    // 3) Permissões (admin, bot, consultor)
+    try {
+      await this.addPermissionToSheet(newSheetId, env.dashboardSheet.botServiceAccount.user.email, false)
+      await this.addPermissionToSheet(newSheetId, this.consultantSheet.emailToShareSheet, true)
 
-    await this.writeGlobalVariablesToConsultantSheet(newSheetId)
-    await this.registerConsultantInDashboard(newSheetId)
+      await this.writeGlobalVariablesToConsultantSheet(newSheetId)
+      await this.registerConsultantInDashboard(newSheetId)
+      console.log(`Permissions applied.`)
+    } catch (error) {
+      throw new Error(`Could not set permissions to new consultant sheet: ${error}`)
+    }
   }
 
-  private async addPermissionToUsers(consultantSheetId: string) {
-    const adminEmail = await this.dashboardSheet.getEnvValue('ADMIN_EMAIL')
-    const botEmail = this.dashboardSheet.googleAccount.user.email
-
-    const addPermissionToGoogleUser = async (email: string, notify: boolean) =>
-      await this.dashboardSheet.googleAccount.DRIVE.permissions.create({
-        fileId: consultantSheetId,
-        requestBody: {
-          type: 'user',
-          role: 'writer',
-          emailAddress: email,
-        },
-        sendNotificationEmail: notify,
-      })
-
-    await addPermissionToGoogleUser(adminEmail, false)
-    await addPermissionToGoogleUser(botEmail, false)
-    await addPermissionToGoogleUser(this.consultantSheet.emailToShareSheet, true)
-    console.log(`Permissions applied.`)
+  async addPermissionToSheet(sheetId: string, email: string, notify: boolean) {
+    await env.dashboardSheet.botServiceAccount.DRIVE.permissions.create({
+      fileId: sheetId,
+      requestBody: {
+        type: 'user',
+        role: 'writer',
+        emailAddress: email,
+      },
+      sendNotificationEmail: notify,
+    })
   }
+
   private async writeGlobalVariablesToConsultantSheet(consultantSheetId: string) {
-    const gv = await this.dashboardSheet.googleAccount.SHEETS.spreadsheets.values.get({
+    const gv = await env.dashboardSheet.botServiceAccount.SHEETS.spreadsheets.values.get({
       spreadsheetId: DASHBOARD_ID!,
       range: 'global_variables!A1:C', // sem header, listas diretas
     })
@@ -67,7 +65,7 @@ export class ConsultantSheetUploader {
       throw new Error(`Dashboard.global_variables is empty`)
     }
 
-    await this.dashboardSheet.googleAccount.SHEETS.spreadsheets.values.update({
+    await env.dashboardSheet.botServiceAccount.SHEETS.spreadsheets.values.update({
       spreadsheetId: consultantSheetId,
       range: 'global_variables!A1',
       valueInputOption: 'USER_ENTERED',
@@ -78,7 +76,7 @@ export class ConsultantSheetUploader {
   }
 
   private async registerConsultantInDashboard(consultantSheetId: string) {
-    await this.dashboardSheet.googleAccount.SHEETS.spreadsheets.values.append({
+    await env.dashboardSheet.botServiceAccount.SHEETS.spreadsheets.values.append({
       spreadsheetId: DASHBOARD_ID!,
       range: 'consultores_clientes!A2:K',
       valueInputOption: 'USER_ENTERED',

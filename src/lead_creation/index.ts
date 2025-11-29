@@ -10,7 +10,7 @@ const env = await getEnvironment()
 class LeadCreation {
   // cria e devolve um client do Google Sheets autenticado (service account)
   async getSheetsClient(): Promise<Sheets> {
-    return env.dashboardSheet.googleAccount.SHEETS // TODO isso ta errado, preciso pegar a tabela lead do consultor eu acho
+    return env.dashboardSheet.botServiceAccount.SHEETS // TODO isso ta errado, preciso pegar a tabela lead do consultor eu acho
   }
   buildLeadCode(regionsCsv: string): string {
     const firstRegion = regionsCsv.split(',')[0]?.trim().toUpperCase() || 'X'
@@ -103,11 +103,9 @@ class LeadCreation {
 
   async createRowForGivenLead(lead: Lead): Promise<string[]> {
     return this.EXPECTED_HEADERS.map(header => {
-      if (header === 'interest_services')
-        return (lead as any).interest_services || (lead as any).interest || ''
+      if (header === 'interest_services') return (lead as any).interest_services || (lead as any).interest || ''
       if (header === 'interest_regions') return (lead as any).interest_regions || lead.regions || ''
-      if (header === 'created_at' && (lead as any).created_at_unix)
-        return `${lead.created_at} (${(lead as any).created_at_unix})`
+      if (header === 'created_at' && (lead as any).created_at_unix) return `${lead.created_at} (${(lead as any).created_at_unix})`
       // @ts-ignore
       return lead[header] ?? ''
     })
